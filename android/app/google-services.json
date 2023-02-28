@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "610144383960",
+    "project_id": "simonwang-messaging",
+    "storage_bucket": "simonwang-messaging.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:610144383960:android:2e58e3c545c87165b178ad",
+        "android_client_info": {
+          "package_name": "com.example.messaging"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "610144383960-ag3m8a6avpn26i412ubb89nkebim62pt.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCW6fEHhVd2kRAHLhuc5tMcHbdpk0RIw4g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "610144383960-ag3m8a6avpn26i412ubb89nkebim62pt.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
