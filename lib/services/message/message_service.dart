@@ -1,18 +1,17 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:messaging/services/service_helper.dart';
-import 'package:messaging/utils/constants.dart';
 import 'package:messaging/utils/utils.dart';
 
 import '../../models/message/models.dart';
 
 import '../base/base_service.dart';
-import '../base/base_cache.dart';
 import '../database.dart';
 
 import 'message_cache.dart';
 import 'message_service_api.dart';
+
+// todo: enable check point with sqlite
 
 class MessageService extends BaseService<MessageCache> with MessageServiceApi {
   MessageService(super.cache, {List<MessageCluster>? clusters})
@@ -72,19 +71,22 @@ class MessageService extends BaseService<MessageCache> with MessageServiceApi {
   /// e.g., we cannot know whether messages are read or loaded because those messages may be created before the check point
   /// consequently, the createdOn filter would never push updates related to such messages
   void _listenClusterChange(MessageCluster messageCluster) {
-    final checkPoint = CheckPointManager.get(
-        "${Constants.chatCheckPoint}-${messageCluster.chatId}");
+    final checkPoint =
+        cache.getPoint("${Constants.chatCheckPoint}-${messageCluster.chatId}");
 
-    var query = Database.remote
+    var query = firestore
         .collection("${messageCluster.path}/${Collection.message}")
         .where("chatId", isEqualTo: messageCluster.chatId);
 
-    // if (checkPoint != null) {
-    //   query = query.where("lastModified", isGreaterThan: checkPoint);
-    // }
+    if (checkPoint != null) {
+      print(
+          "message service: ${DateTime.fromMillisecondsSinceEpoch(checkPoint)}");
+
+      query = query.where("lastModified", isGreaterThan: checkPoint);
+    }
 
     final sub = query.snapshots().listen(
-          _handleClusterChange,
+          handleFirestoreChange,
           onError: cache.dispatchError,
           onDone: () => removeListener(messageCluster.path),
         );
@@ -93,14 +95,16 @@ class MessageService extends BaseService<MessageCache> with MessageServiceApi {
   }
 
   // ? if change type is [DocumentType.removed], change.doc.data() would return the deleted data?
-  void _handleClusterChange(QueryChange snapshot) {
+  @override
+  void handleFirestoreChange(QueryChange snapshot) {
     final events = <MessageEvent>[];
     // todo: filter some kinds of [MessageEvent] to reduce the complexity
     for (final change in snapshot.docChanges) {
       final operation = mapToOperation(change.type);
 
       final map = change.doc.data()!;
-      print("[MESSAGE] change: $map");
+
+      print("[MESSAGE] change: $map, deleted: $operation");
 
       events.add(
         MessageEvent(

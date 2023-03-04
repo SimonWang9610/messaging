@@ -1,6 +1,7 @@
 class Constants {
   static const contactCheckPoint = "contact-check-point";
   static const chatCheckPoint = "chat-check-point";
+  static const friendCheckPoint = "friend-check-point";
 }
 
 class Collection {
@@ -15,6 +16,9 @@ class Collection {
 
   /// contacts/
   static const contact = "contacts";
+
+  /// users/<userid>/friends
+  static const friend = "friends";
 
   /// message-clusters/<clusterId>/messages
   static const message = "messages";

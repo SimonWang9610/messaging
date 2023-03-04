@@ -5,7 +5,6 @@ import 'package:badges/badges.dart' as badges;
 import 'package:messaging/models/chat/chat.dart';
 import 'package:messaging/pages/message_list.dart';
 import 'package:messaging/services/chat/chat_pool.dart';
-import 'package:messaging/services/message/message_pool.dart';
 import '../utils/utils.dart';
 
 class ChatList extends StatefulWidget {
@@ -35,6 +34,7 @@ class _ChatListState extends State<ChatList>
     bool shouldUpdated =
         _lastModified == null ? true : _lastModified! < timestamp;
     _lastModified = timestamp;
+    print("should update: $shouldUpdated");
 
     if (shouldUpdated && mounted) {
       setState(() {});
@@ -76,13 +76,15 @@ class ChatWidget extends StatelessWidget {
     final lastModified =
         DateTime.fromMillisecondsSinceEpoch(chat.lastModified, isUtc: false);
 
+    final title = ChatPool().findChatName(chat);
+
     return Container(
       height: 120,
       decoration: BoxDecoration(
         border: Border.all(),
         borderRadius: BorderRadius.circular(25),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
@@ -92,7 +94,7 @@ class ChatWidget extends StatelessWidget {
             badgeContent: Text("${chat.unread}"),
             child: CircleAvatar(
               child: Text(
-                chat.id[0].toUpperCase(),
+                title?[0].toUpperCase() ?? chat.docId[0].toUpperCase(),
               ),
             ),
           ),
@@ -103,7 +105,7 @@ class ChatWidget extends StatelessWidget {
                   page: MessageScreen(chat: chat),
                 );
               },
-              title: Text(chat.id),
+              title: Text(title ?? chat.docId),
               trailing: Text(lastModified.toString()),
               subtitle: Text(chat.lastMessage?.body ?? "[No message]"),
             ),

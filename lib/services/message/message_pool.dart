@@ -9,7 +9,7 @@ import 'message_service.dart';
 /// [init] would do something sequentially
 /// 1) [close] previous [service] and [cache]
 /// 2) [createCacheAndService]
-/// 3) wait [cache.init] completed
+/// 3) wait [MessageCache.init] completed
 /// 4) wait [MessageService.initListeners] completed.
 /// if no init [MessageCluster] provided, [MessageService.initListeners] actually do nothing.
 /// therefore, [ChatPool] should manually invoke [bindClusters] to listen to all [Chat]s updates
@@ -26,11 +26,11 @@ class MessagePool extends BasePool<MessageCache, MessageService> {
   }
 
   Stream<int> subscribe(Chat chat) {
-    Log.i("start chatting with ${chat.id}");
+    Log.i("start chatting with ${chat.docId}");
 
     cache.subscribe(chat);
     service.refreshCluster(
-      MessageCluster(path: chat.clusters.last, chatId: chat.id),
+      MessageCluster(path: chat.clusters.last, chatId: chat.docId),
     );
     return cache.stream;
   }

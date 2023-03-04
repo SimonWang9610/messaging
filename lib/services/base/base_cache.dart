@@ -1,40 +1,68 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:convert';
 
-import 'package:flutter/material.dart';
-import 'package:meta/meta.dart';
-
-import '../../utils/store.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:messaging/models/user.dart';
+import 'package:messaging/services/base/database_mapping.dart';
+import 'package:messaging/utils/utils.dart';
 
 /// used to [dispatch] events created from [BaseService]
-/// [eventEmitter] is created by [BasePool], so it should not be closed by [BaseCache]
-/// some operations should be executed via [baseCache] once an event is [dispatch] instead of via [BaseService]
-abstract class BaseCache<T, E> with CacheCommitScheduler {
-  final StreamController<T> eventEmitter;
+abstract class BaseCache<T, E> with DatabaseMapping<T>, CheckPointManager {
+  final StreamController<int> eventEmitter;
+  final ValueNotifier<bool> _hasCommitScheduled = ValueNotifier(false);
+
+  bool get hasCommitScheduled => _hasCommitScheduled.value;
+  Stream<int> get stream => eventEmitter.stream;
 
   BaseCache({bool isBroadcast = false})
       : eventEmitter = isBroadcast
-            ? StreamController<T>.broadcast()
-            : StreamController<T>();
+            ? StreamController<int>.broadcast()
+            : StreamController<int>();
 
-  /// typically, the subclasses of [BaseCache] should care if [loadLocalCacheData] during [init]
+  /// typically, the subclasses of [BaseCache] should care if invoking [loadLocalCacheData] during [init]
   Future<void> init() async {}
 
+  /// dispatch single/multiple [E] event
+  /// [BaseCache] typically need to merge [E] event so as to avoid [scheduleFlushUpdatesForUI] repeatedly
+  /// their implementations should invoke [scheduleCommit] to commit updates.deletions into local database
   void dispatch(E event);
-
   void dispatchAll(List<E> events);
 
-  /// dispatch error
+  /// todo: dispatch error
   void dispatchError(Object error, [StackTrace? stackTrace]) {}
 
-  String getCurrentUserEmail() {
-    assert(LocalStorage.hasKey("userEmail"));
-    return LocalStorage.read("userEmail");
+  /// 1) [scheduleCommit] if [hasCommitScheduled], it has no effect; otherwise it waits:
+  /// 2) [commitUpdates] commit all updates/deletions into local database by invoking: [writeToLocalDatabase]
+  /// 3) once [commitUpdates] completes, [afterCommit] is executed instantly
+  Future<bool> commitUpdates();
+  void afterCommit(bool committed);
+
+  Future<void> scheduleCommit({
+    String? debugLabel,
+  }) async {
+    if (_hasCommitScheduled.value) return;
+
+    _hasCommitScheduled.value = true;
+    Log.i("$debugLabel: ----------[committing]");
+
+    final committed = await commitUpdates();
+    Log.i("$debugLabel: ----------[updates committed]");
+
+    afterCommit(committed);
+    Log.i("$debugLabel: ----------[would notify UI]");
+
+    _hasCommitScheduled.value = false;
   }
 
-  String getCurrentUserId() {
-    return LocalStorage.read("userId", useGlobal: true);
+  void scheduleFlushUpdatesForUI() {
+    SchedulerBinding.instance.endOfFrame.then(
+      (_) => notifyCacheChange(),
+    );
   }
+
+  /// it it is the duty of subclasses of [BaseCache] to define how to notify UI the changes of cached data
+  void notifyCacheChange();
 
   @mustCallSuper
   Future<void> close() async {
@@ -42,54 +70,37 @@ abstract class BaseCache<T, E> with CacheCommitScheduler {
 
     await eventEmitter.close();
   }
-
-  /// when [BaseCache] is created by [BasePool.createCache]
-  /// [init] would also be invoked to load local CacheData
-  /// the subclasses of [BaseCache] may override this method to do something
-  Future<void> loadLocalCacheData() async {}
-
-  Stream<T> get stream => eventEmitter.stream;
 }
 
-typedef CommitAction = Future<bool> Function();
-typedef AfterCommitAction = void Function(bool);
-
-mixin CacheCommitScheduler {
-  final ValueNotifier<bool> _hasCommitScheduled = ValueNotifier(false);
-
-  bool get hasCommitScheduled => _hasCommitScheduled.value;
-
-  Future<void> scheduleCommit(
-    CommitAction action, {
-    required AfterCommitAction afterCommitted,
-    String? debugLabel,
-  }) async {
-    if (_hasCommitScheduled.value) return;
-
-    _hasCommitScheduled.value = true;
-    print("#########[COMMITTING] -> $debugLabel");
-
-    final committed = await action();
-    print("vvvvvvvvv[COMMITTED] -> $debugLabel");
-
-    afterCommitted(committed);
-    print(">>>>>>>>>[DISPATCH] -> $debugLabel");
-    _hasCommitScheduled.value = false;
-  }
-}
-
-class CheckPointManager {
-  static Future<void> store(
+/// if the current user has never logged in this device, his/her check points should be null
+/// and their check points should be isolated for different [User]
+///
+/// through the check point mechanism, we could know the last time that the device loaded remote data for the current user
+/// as a result, we just need to load those data changed after the check point
+/// since we ensure changes happened before check points had been committed into local database
+mixin CheckPointManager {
+  Future<void> storePoint(
     String key, {
     int? checkPoint,
     bool shouldFallback = false,
   }) async {
+    // todo: only for testing on web
+    if (kIsWeb) return;
+
     final effectiveCheckPoint = checkPoint ??
         (shouldFallback ? DateTime.now().millisecondsSinceEpoch : null);
     await LocalStorage.write(key, effectiveCheckPoint);
   }
 
-  static int? get(String key) {
+  int? getPoint(String key) {
     return LocalStorage.read(key);
+  }
+
+  /// once users logged in, they should write their user infos in the global container
+  /// so that app could know which user is active currently
+  /// by doing so, we could separate check point containers fro different users
+  User getCurrentUser() {
+    final map = LocalStorage.read("user", useGlobal: true);
+    return User.fromMap(json.decode(map) as Map<String, dynamic>);
   }
 }

@@ -1,22 +1,33 @@
-import 'package:flutter/scheduler.dart';
+import 'dart:math';
 
-import 'package:messaging/models/chat/sync_point.dart';
+import 'package:flutter/foundation.dart';
 import 'package:messaging/models/message/models.dart';
 import 'package:messaging/models/operation.dart';
+import 'package:messaging/services/chat/local_database_mapping.dart';
+import 'package:messaging/storage/sql_builder.dart';
 import 'package:messaging/utils/utils.dart';
 
 import '../../models/chat/models.dart';
 import '../base/base_cache.dart';
 import '../message/message_pool.dart';
 
-// todo: handle [loadLocalCacheData]
-// todo: handle message deletion for the chat list
-class ChatCache extends BaseCache<int, ChatEvent> {
+// todo: handle chat reloading if users deleted a chat from the chat list (not physically deleted)
+
+class ChatCache extends BaseCache<Chat, ChatEvent> with ChatDatabaseMapping {
   ChatCache({super.isBroadcast = false});
 
-  final Map<String, Chat> _localChats = {};
+  // todo: make it temporarily
+  /// key: [Chat.docId]
   final Map<String, SyncPoint> _syncPoints = {};
+
+  /// key: [Chat.docId]/[ChatEvent.chatId], they are equivalent
+  /// temporarily holding [PendingLastMessage] for chats that are not ready in local database
+  /// although such cases are rarely
+  /// we use this as a formal process to reduce the complexity between [MessagePool] and [ChatPool]
   final Map<String, PendingLastMessage> _pendingLastMessages = {};
+
+  /// the local chat loaded in the memory
+  final Map<String, Chat> _localChats = {};
 
   Map<String, Chat> _waitingCommit = {};
 
@@ -24,30 +35,37 @@ class ChatCache extends BaseCache<int, ChatEvent> {
       _localChats.values.map((e) => e.latestCluster).toList();
 
   List<Chat> get sortedChat => _localChats.values.toList()
-    ..sort((a, b) => a.lastModified - b.lastModified);
+    ..sort((a, b) {
+      if (a.lastMessage == null || b.lastMessage == null) {
+        return a.lastMessage?.lastModified ??
+            b.lastMessage?.lastModified ??
+            a.lastModified - b.lastModified;
+      } else {
+        return a.lastMessage!.lastModified - b.lastMessage!.lastModified;
+      }
+    });
 
   int? _latterLastModified;
 
-  // todo: only for testing, should remove once SQLite has been enabled
-  List<Message>? getPendingMessages(String chatId) {
-    final pending = _pendingLastMessages[chatId];
-    if (pending != null) {
-      return pending.messages..sort((a, b) => a.createdOn - b.createdOn);
-    }
-    return null;
-  }
-
   @override
   Future<void> init() async {
-    await loadLocalCacheData();
-    _latterLastModified = CheckPointManager.get(Constants.chatCheckPoint);
+    final query = QueryBuilder(
+      "chats",
+      where: "belongTo = ?",
+      whereArgs: [getCurrentUser().id],
+    );
+    final chats = await readFromLocalDatabase(query);
+
+    chats.forEach((chat) {
+      _localChats[chat.docId] = chat;
+    });
+
+    _latterLastModified = getPoint(Constants.chatCheckPoint);
   }
 
-  @override
-  Future<void> loadLocalCacheData() async {
-    // todo: init _localChats
-  }
-
+  /// for all changes dispatched by [dispatch]/[dispatchAll]
+  /// they would be processed by [_syncLocalChat] to filter some of them that require being committed
+  /// prior to [scheduleCommit]
   @override
   void dispatch(event) {
     final merged = event.chat.merge(_localChats[event.chatId]);
@@ -56,17 +74,11 @@ class ChatCache extends BaseCache<int, ChatEvent> {
     }
     _syncLocalChat(merged);
 
-    scheduleCommit(
-      _commitChatUpdates,
-      afterCommitted: (committed) {
-        if (committed) scheduleFlushChatUpdates();
-      },
-      debugLabel: "[ChatCache].dispatch",
-    );
+    scheduleCommit(debugLabel: "[ChatCache].dispatch");
   }
 
   /// for old device, [dispatchAll] typically is invoked when a [Chat] is added or the [Chat.members] is changed
-  /// for a new device, [dispatchAll] is also invoked when loading all history [Chat]s
+  /// for a new device, [dispatchAll] is also invoked when loading all history [Chat]s compared to its local check point
   @override
   void dispatchAll(events) {
     for (final event in events) {
@@ -80,15 +92,61 @@ class ChatCache extends BaseCache<int, ChatEvent> {
     }
     // todo: should flush updates into local database
 
-    scheduleCommit(
-      _commitChatUpdates,
-      afterCommitted: (committed) {
-        if (committed) scheduleFlushChatUpdates();
-      },
-      debugLabel: "[ChatCache].dispatchAll",
-    );
+    scheduleCommit(debugLabel: "[ChatCache].dispatchAll");
   }
 
+  @override
+  Future<bool> commitUpdates() async {
+    bool updatesCommitted = false;
+
+    while (_waitingCommit.isNotEmpty) {
+      final chats = _waitingCommit;
+      _waitingCommit = {};
+
+      await writeToLocalDatabase(
+        "chats",
+        upserts: chats.values.toList(),
+        belongTo: getCurrentUser().id,
+      );
+
+      for (final chatId in chats.keys) {
+        _localChats[chatId] = chats[chatId]!;
+
+        if (_latterLastModified == null) {
+          _latterLastModified = chats[chatId]!.lastModified;
+        } else {
+          _latterLastModified =
+              max(_latterLastModified!, chats[chatId]!.lastModified);
+        }
+      }
+      updatesCommitted = true;
+    }
+    return updatesCommitted;
+  }
+
+  @override
+  void afterCommit(committed) {
+    if (committed) {
+      storePoint(
+        Constants.chatCheckPoint,
+        checkPoint: _latterLastModified,
+      );
+      scheduleFlushUpdatesForUI();
+    }
+  }
+
+  @override
+  void notifyCacheChange() async {
+    if (!eventEmitter.isClosed && _latterLastModified != null) {
+      eventEmitter.add(DateTime.now().millisecondsSinceEpoch);
+    }
+  }
+
+  // todo: a chat is removed from [_loadChats], should reload it if its new messages are dispatched
+  /// e.g., the user removes a chat from the chat list, but we should not delete this chat from firestore
+  /// we just need to remove it from [_localChats] and do nothing on the local database and firestore
+  /// when its new messages are dispatched, we should try reloading it from the local database
+  ///
   /// when [dispatchLastMessages], a [Chat] mat not be ready in [_localChats]
   /// so we should add such messages in [_pendingLastMessages]
   /// so that [Chat]s could be synced when [dispatch]/[dispatchAll] is triggered
@@ -101,63 +159,51 @@ class ChatCache extends BaseCache<int, ChatEvent> {
       _syncLocalChat(_localChats[entry.key]);
     }
 
-    scheduleCommit(
-      _commitChatUpdates,
-      afterCommitted: (committed) {
-        if (committed) scheduleFlushChatUpdates();
-      },
-      debugLabel: "dispatchLastMessages",
-    );
+    scheduleCommit(debugLabel: "dispatchLastMessages");
+  }
+
+  /// happens after completing [ChatPool.service.ackMessages] that are invoked when marking messages as read
+  void updateSyncPoint(SyncPoint syncPoint) {
+    _syncPoints[syncPoint.chatId] =
+        syncPoint.compare(_syncPoints[syncPoint.chatId]);
+
+    _syncLocalChat(_localChats[syncPoint.chatId]);
+
+    if (_subscribed != null && _subscribed!.docId == syncPoint.chatId) {
+      _subscribed = _localChats[_subscribed!.docId];
+    }
+
+    scheduleCommit(debugLabel: "updateSyncPoint");
+  }
+
+  /// during [updateSyncPoints], some [Chat] mat not be ready at [_localChats]
+  /// so we just ignore those not-ready chats since we guarantee they would be synced in [dispatch]/[dispatchAll]
+  /// if the [Chat] has been ready, we should [_syncLocalChat] directly
+  Future<void> updateSyncPoints(List<Map<String, dynamic>> syncPoints) async {
+    syncPoints.forEach((map) {
+      final syncPoint = SyncPoint.fromMap(map);
+      _syncPoints[syncPoint.chatId] = syncPoint;
+      _syncLocalChat(_localChats[syncPoint.chatId]);
+    });
+
+    scheduleCommit(debugLabel: "updateSyncPoints");
   }
 
   Chat? _subscribed;
 
-  // todo: do we need to force sync chat when starting a chat?
-  /// when starting chat for [chat], we need to reset its unread to 0
-  /// therefore, we need to [scheduleCommit] to update its unread so as to update the chat list UI
-  /// when leaving a chat, we do not need to anything special
-  /// because its unread count would not change, and its lat last message would be updated together with other chats
-  set subscribed(Chat? chat) {
+  void subscribe(Chat chat) {
     if (_subscribed == chat) return;
-
-    _subscribed = chat?.copyWith(unread: 0);
+    _subscribed = chat;
     _syncLocalChat(_subscribed);
-
-    // if (_subscribed != null) {
-    //   scheduleCommit(
-    //     _commitChatUpdates,
-    //     afterCommitted: (committed) {
-    //       if (committed) scheduleFlushChatUpdates();
-    //     },
-    //     debugLabel: "subscribed",
-    //   );
-    // }
+    scheduleCommit(debugLabel: "[ChatCache].subscribe]");
   }
 
-  /// by using while-loop, we could merge events from [dispatch]/[dispatchAll] into one commit operation
-  /// when invoke [scheduleCommit], [hasCommitScheduled] could avoid invoking [_commitChatUpdates] multiple times in a very short time
-  /// as a result, we only need to invoke [scheduleFlushChatUpdates] once for multiple [dispatch]/[dispatchAll]
-  Future<bool> _commitChatUpdates() async {
-    bool updatesCommitted = false;
+  void unsubscribe(Message? lastMessage) {
+    if (_subscribed == null) return;
 
-    while (_waitingCommit.isNotEmpty) {
-      final chats = _waitingCommit;
-      _waitingCommit = {};
-
-      await _writeToLocalDatabase(chats.values.toList());
-
-      for (final chatId in chats.keys) {
-        _localChats[chatId] = chats[chatId]!;
-      }
-      updatesCommitted = true;
-    }
-    return updatesCommitted;
-  }
-
-  Future<void> _writeToLocalDatabase(List<Chat> chats) async {
-    await Future.delayed(const Duration(milliseconds: 120), () {
-      print("[ChatCache]: write to local database");
-    });
+    _syncLocalChat(_subscribed?.copyWith(lastMessage: lastMessage));
+    _subscribed = null;
+    scheduleCommit(debugLabel: "[ChatCache].unsubscribe]");
   }
 
   /// typically, it happens when the [chatId] is not ready in [_localChats]
@@ -173,6 +219,7 @@ class ChatCache extends BaseCache<int, ChatEvent> {
     }
   }
 
+  /// todo: avoid adding the same [Chat] into [_waitingCommit]
   /// 1) use the latest [SyncPoint]
   /// 2) check the [PendingLastMessage] for [chat]
   /// 3) count unread
@@ -185,15 +232,16 @@ class ChatCache extends BaseCache<int, ChatEvent> {
   void _syncLocalChat(Chat? chat, {bool forceSync = false}) {
     if (chat == null) return;
 
-    final syncPoint =
-        chat.syncPoint?.compare(_syncPoints[chat.id]) ?? _syncPoints[chat.id];
+    final syncPoint = chat.syncPoint?.compare(_syncPoints[chat.docId]) ??
+        _syncPoints[chat.docId];
 
-    final pending = _pendingLastMessages.remove(chat.id);
+    final pending = _pendingLastMessages.remove(chat.docId);
 
     final unread = pending?.countUnread(
-          getCurrentUserEmail(),
+          getCurrentUser().id,
           syncPoint: syncPoint,
-          isSubscribed: chat.id == _subscribed?.id,
+          isSubscribed: chat.docId == _subscribed?.docId,
+          previous: chat.lastMessage,
         ) ??
         0;
 
@@ -203,70 +251,9 @@ class ChatCache extends BaseCache<int, ChatEvent> {
       unread: chat.unread + unread,
     );
 
-    if (syncedChat != chat ||
-        !_localChats.containsKey(syncedChat.id) ||
-        forceSync) {
-      _waitingCommit[syncedChat.id] = syncedChat;
-    } else {
-      _localChats[syncedChat.id] = syncedChat;
+    if (syncedChat != _localChats[syncedChat.docId] || forceSync) {
+      _waitingCommit[syncedChat.docId] = syncedChat;
     }
-  }
-
-  /// during [updateSyncPoints], some [Chat] mat not be ready at [_localChats]
-  /// so we just ignore those not-ready chats since we guarantee then would be synced in [dispatch]/[dispatchAll]
-  /// if the [Chat] has been ready, we should [_syncLocalChat]
-  Future<void> updateSyncPoints(List<Map<String, dynamic>> syncPoints) async {
-    syncPoints.forEach((map) {
-      final syncPoint = SyncPoint.fromMap(map);
-      _syncPoints[syncPoint.chatId] = syncPoint;
-      _syncLocalChat(_localChats[syncPoint.chatId]);
-    });
-
-    scheduleCommit(
-      _commitChatUpdates,
-      afterCommitted: (committed) {
-        if (committed) scheduleFlushChatUpdates();
-      },
-      debugLabel: "updateSyncPoints",
-    );
-  }
-
-  // todo: should store check point
-  void updateSyncPoint(SyncPoint syncPoint) {
-    _syncPoints[syncPoint.chatId] =
-        syncPoint.compare(_syncPoints[syncPoint.chatId]);
-
-    _syncLocalChat(_localChats[syncPoint.chatId]);
-
-    if (_subscribed != null && _subscribed!.id == syncPoint.chatId) {
-      _subscribed = _localChats[_subscribed!.id];
-    }
-
-    scheduleCommit(
-      _commitChatUpdates,
-      afterCommitted: (committed) {
-        if (committed) scheduleFlushChatUpdates();
-      },
-      debugLabel: "updateSyncPoint",
-    );
-  }
-
-  void scheduleFlushChatUpdates([int? timestamp]) {
-    _latterLastModified = DateTime.now().millisecondsSinceEpoch;
-
-    SchedulerBinding.instance.endOfFrame.then(
-      (_) async {
-        await CheckPointManager.store(
-          Constants.chatCheckPoint,
-          checkPoint: timestamp ?? _latterLastModified,
-        );
-        _latterLastModified = CheckPointManager.get(Constants.chatCheckPoint)!;
-
-        if (!eventEmitter.isClosed) {
-          eventEmitter.add(_latterLastModified!);
-        }
-      },
-    );
   }
 
   Chat? findChatByHash(String hash) {
@@ -277,9 +264,110 @@ class ChatCache extends BaseCache<int, ChatEvent> {
     return null;
   }
 
+  Chat? findChatById(String chatId) {
+    return _localChats[chatId];
+  }
+
   @override
   Future<void> close() async {
     _localChats.clear();
     await super.close();
   }
 }
+
+// todo: not using
+// mixin CacheReloading on BaseCache<Chat, ChatEvent>, ChatDatabaseMapping {
+//   Map<String, Chat> get _localChats;
+
+//   Map<String, Chat?> _needsReloading = {};
+
+//   Future<Chat?> _reload(String chatId, Chat? chat, String belongTo) async {
+//     if (chat == null) {
+//       final query = QueryBuilder(
+//         "chats",
+//         where: "docId = ? AND belongTo = ?",
+//         whereArgs: [chatId, belongTo],
+//         limit: 1,
+//       );
+//       chat = await readFromLocalDatabase(query).then(
+//         (chats) {
+//           if (chats.isNotEmpty) {
+//             return chats.first;
+//           }
+//           return null;
+//         },
+//       );
+//     }
+
+//     if (chat != null) {
+//       final msgQuery = QueryBuilder(
+//         "messages",
+//         where: "chatId = ? AND belongTo = ? AND cluster = ?",
+//         whereArgs: [chat.docId, belongTo, chat.clusters.last],
+//         orderBy: "createdOn DESC",
+//         limit: 1,
+//       );
+
+//       final lastMessage =
+//           await MessagePool().cache.readFromLocalDatabase(msgQuery).then(
+//         (msgs) {
+//           if (msgs.isNotEmpty) {
+//             return msgs.first;
+//           }
+//         },
+//       );
+
+//       chat = chat.copyWith(lastMessage: lastMessage);
+//     }
+
+//     return chat;
+//   }
+
+//   bool _hasReloadingScheduled = false;
+//   void scheduleReloading() {
+//     if (_hasReloadingScheduled || _needsReloading.isEmpty) return;
+//     _reloadAll();
+//   }
+
+//   Future<void> _reloadAll() async {
+//     if (kIsWeb) return;
+
+//     final Map<String, Chat> chats = {};
+
+//     final belongTo = getCurrentUser().id;
+
+//     while (_needsReloading.isNotEmpty) {
+//       final needsReload = _needsReloading;
+//       _needsReloading = {};
+
+//       final futures = <Future>[];
+
+//       for (final entry in needsReload.entries) {
+//         futures.add(
+//           _reload(entry.key, entry.value, belongTo).then((chat) {
+//             if (chat != null) {
+//               chats[chat.docId] = chat;
+//             }
+//           }),
+//         );
+//       }
+//       await Future.wait(futures);
+//     }
+
+//     _syncReloadingChats(chats.values.toList());
+//   }
+
+//   void _syncReloadingChats(List<Chat> chats) {
+//     if (chats.isEmpty) return;
+
+//     for (final chat in chats) {
+//       _localChats[chat.docId] = chat;
+//     }
+
+//     if (!hasCommitScheduled) {
+//       scheduleFlushUpdatesForUI();
+//     }
+
+//     _hasReloadingScheduled = false;
+//   }
+// }

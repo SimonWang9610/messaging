@@ -40,18 +40,15 @@ abstract class BasePool<C extends BaseCache, S extends BaseService<C>> {
     await close();
 
     createCacheAndService();
-    // Log.i("[Cache]: ${_cache.runtimeType} starting---");
 
     await _cache!.init();
-    // Log.i("[Cache]: ${_cache.runtimeType} started---");
 
-    // Log.i("[Service]: ${_service.runtimeType} starting...");
     await _service!.initListeners();
-    // Log.i("[Service]: ${_service.runtimeType} started...");
 
     Log.i("$runtimeType initialized<<<<<<<<<<<<");
   }
 
+  /// the subclasses should implement this method to initialize [_cache] and [_service]
   void createCacheAndService();
 
   @mustCallSuper

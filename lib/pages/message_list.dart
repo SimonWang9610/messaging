@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:messaging/models/message/message_cluster.dart';
 import 'package:messaging/models/message/message_status.dart';
+import 'package:messaging/services/chat/chat_pool.dart';
+import 'package:messaging/services/friend/friend_pool.dart';
 import 'package:wrapper/wrapper.dart';
 
 import 'package:messaging/models/chat/chat.dart';
@@ -16,10 +18,12 @@ class MessageScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final name = ChatPool().findChatName(chat);
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: Text(chat.id),
+        title: Text(name ?? chat.docId),
         leading: IconButton(
           onPressed: () {
             MessagePool().unsubscribe();
@@ -121,29 +125,50 @@ class MessageWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sentBySelf =
-        message.sender == MessagePool().cache.getCurrentUserEmail();
+    final currentUser = MessagePool().cache.getCurrentUser();
+    final sentBySelf = message.sender == currentUser.id;
 
     final avatar = CircleAvatar(
       child: Text(message.sender[0].toUpperCase()),
     );
     const spacer = Spacer();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            sentBySelf ? MainAxisAlignment.end : MainAxisAlignment.start,
-        children: [
-          sentBySelf ? spacer : avatar,
-          Flexible(
-            child: _buildBody(message, sentBySelf),
-          ),
-          sentBySelf ? avatar : spacer,
-        ],
+    return GestureDetector(
+      onLongPress: () => _delete(message, currentUser.id),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment:
+              sentBySelf ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            sentBySelf ? spacer : avatar,
+            Flexible(
+              child: _buildBody(message, sentBySelf),
+            ),
+            sentBySelf ? avatar : spacer,
+          ],
+        ),
       ),
     );
+  }
+
+  void _delete(Message msg, String currentUserId) {
+    final canRollback =
+        DateTime.fromMillisecondsSinceEpoch(msg.createdOn, isUtc: true)
+                    .difference(DateTime.now())
+                    .abs()
+                    .inMinutes <
+                2 &&
+            msg.sender == currentUserId;
+
+    print("xxxxxxxxxxx rollback: $canRollback");
+
+    if (canRollback) {
+      MessagePool().service.rollbackMessage(message);
+    } else {
+      MessagePool().cache.deleteLocalMessage(message);
+    }
   }
 
   Widget _buildBody(Message msg, bool sentBySelf) {
@@ -261,6 +286,12 @@ class _MessageInputState extends State<MessageInput> {
     final text = _controller.text;
     _controller.clear();
 
-    MessagePool().service.sendTextMessage(widget.cluster, text: text);
+    final chat = ChatPool().cache.findChatById(widget.cluster.chatId);
+
+    final isFriend = FriendPool().cache.isFriend(chat?.membersHash);
+
+    if (chat != null && isFriend) {
+      MessagePool().service.sendTextMessage(widget.cluster, text: text);
+    }
   }
 }

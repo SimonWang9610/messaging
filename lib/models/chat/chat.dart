@@ -6,12 +6,13 @@ import 'package:flutter/foundation.dart';
 
 import 'package:messaging/models/message/message.dart';
 import 'package:messaging/models/message/message_cluster.dart';
+import 'package:messaging/models/message/models.dart';
 
 import 'sync_point.dart';
 
 class Chat {
   /// the document id in firestore
-  final String id;
+  final String docId;
   final int createdOn;
   final int lastModified;
   final List<String> members;
@@ -23,7 +24,7 @@ class Chat {
   final Message? lastMessage;
   final int unread;
   Chat({
-    required this.id,
+    required this.docId,
     required this.createdOn,
     required this.lastModified,
     required this.members,
@@ -35,7 +36,7 @@ class Chat {
   });
 
   Chat copyWith({
-    String? id,
+    String? docId,
     int? createdOn,
     int? lastModified,
     List<String>? members,
@@ -45,27 +46,26 @@ class Chat {
     Message? lastMessage,
     int? unread,
   }) {
-    final message =
-        lastMessage?.compareCreatedOn(this.lastMessage) ?? this.lastMessage;
-
     return Chat(
-      id: id ?? this.id,
+      docId: docId ?? this.docId,
       createdOn: createdOn ?? this.createdOn,
       lastModified: lastModified ?? this.lastModified,
       members: members ?? this.members,
       clusters: clusters ?? this.clusters,
       membersHash: membersHash ?? this.membersHash,
       syncPoint: syncPoint ?? this.syncPoint,
-      lastMessage: message,
+      lastMessage: lastMessage ?? this.lastMessage,
       unread: unread ?? this.unread,
     );
   }
 
   MessageCluster get latestCluster =>
-      MessageCluster(path: clusters.last, chatId: id);
+      MessageCluster(path: clusters.last, chatId: docId);
 
   Chat merge(Chat? other) {
-    if (other == null || id != other.id || membersHash != other.membersHash) {
+    if (other == null ||
+        docId != other.docId ||
+        membersHash != other.membersHash) {
       return this;
     }
 
@@ -82,7 +82,7 @@ class Chat {
     final count = !needReplace ? unread : other.unread;
 
     return Chat(
-      id: id,
+      docId: docId,
       createdOn: createdOn,
       lastModified: max(lastModified, other.lastModified),
       members: members,
@@ -93,9 +93,19 @@ class Chat {
     );
   }
 
+  // bool shouldSync(Chat? other) {
+  //   if (other == null) return true;
+
+  //   return docId != other.docId ||
+  //       membersHash != other.membersHash ||
+  //       lastModified != other.lastModified ||
+  //       syncPoint != other.syncPoint ||
+  //       lastMessage != other.lastMessage;
+  // }
+
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
-      'id': id,
+      'docId': docId,
       'createdOn': createdOn,
       'lastModified': lastModified,
       'members': members,
@@ -110,7 +120,7 @@ class Chat {
   /// firestore never stores [syncPoint], [lastMessage] and [unread]
   factory Chat.fromMap(Map<String, dynamic> map) {
     return Chat(
-      id: map['id'] as String,
+      docId: map['docId'] as String,
       createdOn: map['createdOn'] as int,
       lastModified: map['lastModified'] as int,
       members: List<String>.from(map['members']),
@@ -119,8 +129,10 @@ class Chat {
       // syncPoint: map['syncPoint'] != null
       //     ? SyncPoint.fromMap(map['syncPoint'] as Map<String, dynamic>)
       //     : null,
-      // lastMessage: null,
-      // unread: 0,
+      // lastMessage: map['lastMessage'] != null
+      //     ? Message.fromMap(map['lastMessage'] as Map<String, dynamic>)
+      //     : null,
+      // unread: map['unread'] as int,
     );
   }
 
@@ -131,14 +143,14 @@ class Chat {
 
   @override
   String toString() {
-    return 'Chat(id: $id, createdOn: $createdOn, lastModified: $lastModified, members: $members, clusters: $clusters, membersHash: $membersHash, syncPoint: $syncPoint, lastMessage: $lastMessage, unread: $unread)';
+    return 'Chat(docId: $docId, createdOn: $createdOn, lastModified: $lastModified, members: $members, clusters: $clusters, membersHash: $membersHash, syncPoint: $syncPoint, lastMessage: $lastMessage, unread: $unread)';
   }
 
   @override
   bool operator ==(covariant Chat other) {
     if (identical(this, other)) return true;
 
-    return other.id == id &&
+    return other.docId == docId &&
         other.createdOn == createdOn &&
         other.lastModified == lastModified &&
         listEquals(other.members, members) &&
@@ -151,7 +163,7 @@ class Chat {
 
   @override
   int get hashCode {
-    return id.hashCode ^
+    return docId.hashCode ^
         createdOn.hashCode ^
         lastModified.hashCode ^
         members.hashCode ^
@@ -161,79 +173,4 @@ class Chat {
         lastMessage.hashCode ^
         unread.hashCode;
   }
-}
-
-class PendingLastMessage {
-  int? _lastModified;
-  Message? _lastMessage;
-  final List<Message> _messages;
-
-  PendingLastMessage({List<Message>? messages}) : _messages = messages ?? [];
-
-  List<Message> get messages => _messages;
-
-  void add(Message lastMessage) {
-    _lastMessage = lastMessage.compareCreatedOn(_lastMessage);
-
-    if (_lastModified == null) {
-      _lastModified = lastMessage.lastModified;
-    } else {
-      _lastModified = max(_lastModified!, lastMessage.lastModified);
-    }
-
-    final duplicate =
-        _messages.lastIndexWhere((msg) => msg.uniqueId == lastMessage.uniqueId);
-
-    if (duplicate > -1) {
-      _messages[duplicate] = _messages[duplicate].merge(lastMessage);
-    } else {
-      _messages.add(lastMessage);
-    }
-  }
-
-  void merge(PendingLastMessage pending) {
-    final mergedMessages = <Message>[];
-
-    _lastMessage = pending.last.compareCreatedOn(_lastMessage);
-    _lastModified = max(_lastModified!, pending.lastModified);
-
-    for (final old in _messages) {
-      final duplicate = pending.messages
-          .lastIndexWhere((msg) => msg.uniqueId == old.uniqueId);
-
-      if (duplicate > -1) {
-        final msg = old.merge(pending.messages.removeAt(duplicate));
-        mergedMessages.add(msg);
-      } else {
-        mergedMessages.add(old);
-      }
-    }
-
-    _messages.clear();
-    _messages.addAll([...mergedMessages, ...pending.messages]);
-  }
-
-  int countUnread(String currentUser,
-      {SyncPoint? syncPoint, bool isSubscribed = false}) {
-    int count = 0;
-
-    if (isSubscribed || _messages.isEmpty) {
-      return count;
-    } else if (syncPoint == null) {
-      return _messages.where((msg) => msg.sender != currentUser).length;
-    }
-
-    for (final msg in _messages) {
-      if (msg.chatId == syncPoint.chatId &&
-          msg.createdOn > syncPoint.lastSync &&
-          msg.sender != currentUser) {
-        count++;
-      }
-    }
-    return count;
-  }
-
-  Message get last => _lastMessage!;
-
-  int get lastModified => _lastModified!;
 }

@@ -1,17 +1,27 @@
-import 'dart:async';
+import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:messaging/firebase_options.dart';
 import 'package:messaging/pages/chat_list.dart';
-import 'package:messaging/pages/contact_list.dart';
+import 'package:messaging/pages/friend_list.dart';
+import 'package:messaging/services/database.dart';
 import 'package:messaging/services/pool_manager.dart';
 import 'package:messaging/utils/utils.dart';
+
+import 'storage/database_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await DatabaseManager.initLocalDatabase(false);
+
+  // await LocalStorage.init("TzWi21xBmrL8VpstcZud");
+  // LocalStorage.clear(onlyGlobal: false);
+  // await LocalStorage.init("Y8C4TmFks3cWjzzOsTkK");
+  // LocalStorage.clear(onlyGlobal: false);
 
   runApp(const MyApp());
 }
@@ -44,7 +54,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   final PageController _controller = PageController();
 
-  final List<Widget> pages = const [ChatList(), ContactList()];
+  final List<Widget> pages = const [ChatList(), FriendList()];
 
   final ValueNotifier<int> _currentIndex = ValueNotifier(0);
 
@@ -53,9 +63,10 @@ class _MyHomePageState extends State<MyHomePage> {
     _controller.dispose();
     _currentIndex.dispose();
 
-    PoolManager.instance.closePools().then((value) {
-      LocalStorage.clear(onlyGlobal: false);
+    PoolManager.closePools().then((value) {
+      // LocalStorage.clear(onlyGlobal: false);
     });
+    DatabaseManager.closeLocalDatabase();
     super.dispose();
   }
 
@@ -74,6 +85,16 @@ class _MyHomePageState extends State<MyHomePage> {
         },
         children: pages,
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // context.showDialog(
+          //   child: const Material(
+          //     child: AddFriend(),
+          //   ),
+          // );
+        },
+        child: const Icon(Icons.add),
+      ),
       bottomNavigationBar: ValueListenableBuilder(
         valueListenable: _currentIndex,
         builder: (_, index, __) {
@@ -88,11 +109,11 @@ class _MyHomePageState extends State<MyHomePage> {
             items: const [
               BottomNavigationBarItem(
                 label: "Chat",
-                icon: Icon(Icons.home),
+                icon: Icon(Icons.chat_bubble),
               ),
               BottomNavigationBarItem(
-                label: "Contact",
-                icon: Icon(Icons.home),
+                label: "Friends",
+                icon: Icon(Icons.contact_mail),
               ),
             ],
           );
@@ -138,32 +159,45 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  void _login() {
+  void _login() async {
+    final query = firestore
+        .collection(Collection.user)
+        .where("email", isEqualTo: _controller.text)
+        .limit(1);
+
     context.loading(
-      future: _auth().then(
-        (_) => PoolManager.instance.initPools(),
+      removeOnceFutureComplete: false,
+      future: query.get().then(
+        (snapshot) {
+          if (snapshot.size > 0) {
+            return snapshot.docs.first.data();
+          } else {
+            return null;
+          }
+        },
       ),
-      onSuccess: (_) {
-        context.push(
-          page: const MyHomePage(),
-        );
-      },
-      onException: (e) {
-        print("exception on login: $e");
+      onSuccess: (data) async {
+        if (data != null) {
+          print("found user: $data");
+
+          await LocalStorage.init(data["id"]);
+          await LocalStorage.write(
+            "user",
+            json.encode(data),
+            useGlobal: true,
+          );
+
+          await PoolManager.initPools();
+
+          if (mounted) {
+            context.pushReplacement(
+              page: const MyHomePage(),
+            );
+          }
+        } else {
+          print("No user found for ${_controller.text}");
+        }
       },
     );
-  }
-
-  final map = {
-    "dengpan9610.wang@gmail.com": "Y8C4TmFks3cWjzzOsTkK",
-    "dengpan1002.wang@gmail.com": "TzWi21xBmrL8VpstcZud",
-  };
-
-  Future<void> _auth() async {
-    final email = _controller.text;
-    final userId = map[email]!;
-
-    await LocalStorage.init(userId);
-    await LocalStorage.write("userEmail", email);
   }
 }

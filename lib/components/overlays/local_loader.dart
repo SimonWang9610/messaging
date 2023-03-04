@@ -72,7 +72,7 @@ class Loader extends AnimatedOverlay {
       }
 
       if (onSuccess != null) {
-        onSuccess(result);
+        await onSuccess(result);
       }
 
       if (!removeOnceFutureComplete) {

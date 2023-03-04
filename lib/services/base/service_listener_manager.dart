@@ -1,5 +1,6 @@
 import 'dart:async';
 
+/// used by [BaseService] to manage the [StreamSubscription]s that listen to data changes reported by firestore
 mixin RemoteServiceListenerManager {
   final Map<String, StreamSubscription> _listeners = {};
 

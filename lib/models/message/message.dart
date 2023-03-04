@@ -7,7 +7,7 @@ import 'message_type.dart';
 
 class Message {
   /// message unique id, also the document id in firestore
-  final String id;
+  final String docId;
 
   /// the chat it belongs to
   final String chatId;
@@ -36,7 +36,7 @@ class Message {
   final String body;
 
   const Message({
-    required this.id,
+    required this.docId,
     required this.chatId,
     required this.createdOn,
     required this.lastModified,
@@ -48,11 +48,32 @@ class Message {
     required this.body,
   });
 
+  factory Message.deleted({
+    required String docId,
+    required String chatId,
+    required int createdOn,
+    required int lastModified,
+    required String sender,
+    required MessageType type,
+    required String cluster,
+  }) =>
+      Message(
+        docId: docId,
+        chatId: chatId,
+        createdOn: createdOn,
+        lastModified: lastModified,
+        status: MessageStatus.deleted,
+        sender: sender,
+        type: type,
+        cluster: cluster,
+        body: "[MESSAGE DELETED]",
+      );
+
   bool get isPlainText => type == MessageType.text;
-  String get uniqueId => "$chatId-$cluster-$id";
+  String get uniqueId => "$chatId-$cluster-$docId";
 
   Message copyWith({
-    String? id,
+    String? docId,
     String? chatId,
     int? createdOn,
     int? lastModified,
@@ -64,7 +85,7 @@ class Message {
     String? body,
   }) {
     return Message(
-      id: id ?? this.id,
+      docId: docId ?? this.docId,
       chatId: chatId ?? this.chatId,
       createdOn: createdOn ?? this.createdOn,
       lastModified: lastModified ?? this.lastModified,
@@ -88,7 +109,7 @@ class Message {
         MessageStatus.fromInt(max(status.value, other.status.value));
 
     return Message(
-      id: id,
+      docId: docId,
       chatId: chatId,
       createdOn: createdOn,
       lastModified: max(lastModified, other.lastModified),
@@ -115,7 +136,7 @@ class Message {
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
-      'id': id,
+      'docId': docId,
       'chatId': chatId,
       'createdOn': createdOn,
       'lastModified': lastModified,
@@ -130,13 +151,13 @@ class Message {
 
   factory Message.fromMap(Map<String, dynamic> map) {
     return Message(
-      id: map['id'] as String,
+      docId: map['docId'] as String,
       chatId: map['chatId'] as String,
       createdOn: map['createdOn'] as int,
       lastModified: map['lastModified'] as int,
       status: MessageStatus.fromInt(map['status'] as int),
       sender: map['sender'] as String,
-      type: MessageType.fromString(map['type']),
+      type: MessageType.fromString(map['type'] as String),
       cluster: map['cluster'] as String,
       quoteId: map['quoteId'] != null ? map['quoteId'] as String : null,
       body: map['body'] as String,
@@ -144,10 +165,8 @@ class Message {
   }
 
   factory Message.fromStatus(Map<String, dynamic> map, MessageStatus status) {
-    final body = map["body"] ?? map["text"] ?? map["mediaUrl"];
-
     return Message(
-      id: map['id'] as String,
+      docId: map['docId'] as String,
       chatId: map['chatId'] as String,
       createdOn: map['createdOn'] as int,
       lastModified: map['lastModified'] as int,
@@ -156,7 +175,7 @@ class Message {
       type: MessageType.fromString(map['type'] as String),
       cluster: map['cluster'] as String,
       quoteId: map['quoteId'] != null ? map['quoteId'] as String : null,
-      body: body as String,
+      body: map["body"] as String,
     );
   }
 
@@ -167,14 +186,14 @@ class Message {
 
   @override
   String toString() {
-    return 'Message(id: $id, chatId: $chatId, createdOn: $createdOn, lastModified: $lastModified, status: $status, sender: $sender, type: $type, cluster: $cluster, quoteId: $quoteId, body: $body)';
+    return 'Message(docId: $docId, chatId: $chatId, createdOn: $createdOn, lastModified: $lastModified, status: $status, sender: $sender, type: $type, cluster: $cluster, quoteId: $quoteId, body: $body)';
   }
 
   @override
   bool operator ==(covariant Message other) {
     if (identical(this, other)) return true;
 
-    return other.id == id &&
+    return other.docId == docId &&
         other.chatId == chatId &&
         other.createdOn == createdOn &&
         other.lastModified == lastModified &&
@@ -188,7 +207,7 @@ class Message {
 
   @override
   int get hashCode {
-    return id.hashCode ^
+    return docId.hashCode ^
         chatId.hashCode ^
         createdOn.hashCode ^
         lastModified.hashCode ^

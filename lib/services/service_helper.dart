@@ -50,6 +50,10 @@ String hashMembers(List<String> sortedMembers) {
   return hmac.convert(encoded).toString();
 }
 
+String generateFriendDocId(String selfId, String otherId) {
+  return hashMembers(sortChatMembers([selfId, otherId]));
+}
+
 Operation mapToOperation(DocumentChangeType type) {
   switch (type) {
     case DocumentChangeType.added:

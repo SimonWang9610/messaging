@@ -6,7 +6,6 @@ class MessageEvent {
   final Operation operation;
   final String msgId;
   final String chatId;
-  final bool merged;
   final Message message;
 
   MessageEvent({
@@ -14,10 +13,9 @@ class MessageEvent {
     required this.msgId,
     required this.chatId,
     required this.message,
-    this.merged = false,
   });
 
-  String get id => "$chatId$msgId";
+  String get id => message.uniqueId;
 
   MessageEvent copyWith({
     Message? message,
@@ -28,7 +26,6 @@ class MessageEvent {
       msgId: msgId,
       chatId: chatId,
       message: message ?? this.message,
-      merged: merged ?? this.merged,
     );
   }
 
@@ -50,7 +47,10 @@ class MessageEvent {
         other.message,
         statusOverride: statusOverride,
       ),
-      merged: true,
     );
   }
+
+  Message get finalMessage => message.copyWith(
+        status: operation == Operation.deleted ? MessageStatus.deleted : null,
+      );
 }

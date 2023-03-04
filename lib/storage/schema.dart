@@ -1,42 +1,45 @@
 class Schema {
-  static const contact = """
-  CREATE TABLE contacts (
-    id TEXT PRIMARY KEY,
-    inviter TEXT UNIQUE NOT NULL,
-    invitee TEXT UNIQUE NOT NULL,
+  static const friend = """
+  CREATE TABLE friends (
+    docId TEXT NOT NULL,
+    userId TEXT UNIQUE NOT NULL,
+    username TEXT NOT NULL,
+    email TEXT NOT NULL,
+    belongTo TEXT NOT NULL,
     createdOn INTEGER NOT NULL,
     lastModified INTEGER NOT NULL,
-    status INTEGER NOT NULL
+    status INTEGER NOT NULL,
+    createdBy TEXT NOT NULL,
+    nickname TEXT NULL,
+    PRIMARY KEY (docId, belongTo)
   )
-                          """;
+                        """;
 
+  /// [syncPoint] and [lastMessage] would be serialized as JSON string in database
+  /// so they should be deserialized as JSON/Map when reading from database
+  /// currently only for one-to-one chat
   static const chat = """
   CREATE TABLE chats (
-    id TEXT PRIMARY KEY,
+    docId TEXT NOT NULL,
     members TEXT NOT NULL,
-    membersHash TEXT UNIQUE NOT NULL,
+    membersHash TEXT NOT NULL,
+    belongTo TEXT NOT NULL,
     clusters TEXT NOT NULL,
     createdOn INTEGER NOT NULL,
     lastModified INTEGER NOT NULL,
+    syncPoint TEXT NULL,
     lastMessage TEXT NULL,
-    unread INTEGER NOT NULL
+    unread INTEGER NOT NULL,
+    PRIMARY KEY (docId, belongTo, membersHash)
   )
                       """;
 
-  static const syncPoint = """
-  CREATE TABLE sync_points (
-    chatId TEXT PRIMARY KEY,
-    msgId TEXT PRIMARY KEY,
-    lastSync INTEGER NOT NULL,
-    lastModified INTEGER NOT NULL
-  )
-                            """;
-
   static const message = """
   CREATE TABLE messages (
-    id TEXT NOT NULL,
+    docId TEXT NOT NULL,
     chatId TEXT NOT NULL,
     sender TEXT NOT NULL,
+    belongTo TEXT NOT NULL,
     cluster TEXT NOT NULL,
     createdOn INTEGER NOT NULL,
     lastModified INTEGER NOT NULL,
@@ -44,7 +47,13 @@ class Schema {
     body TEXT NOT NULL,
     type TEXT NOT NULL,
     quoteId TEXT NULL,
-    PRIMARY KEY (id, chatId, cluster)
+    PRIMARY KEY (docId, chatId, cluster, belongTo)
   )
                           """;
+
+  static const List<String> debugDrops = [
+    "DROP TABLE IF EXISTS friends",
+    "DROP TABLE IF EXISTS chats",
+    "DROP TABLE IF EXISTS messages"
+  ];
 }

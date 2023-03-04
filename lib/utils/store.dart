@@ -53,10 +53,13 @@ class LocalStorage {
 
   static clear({bool onlyGlobal = true}) {
     print("local store clearing....");
-    GetStorage(global).erase();
 
     if (!onlyGlobal) {
-      GetStorage(userSpace).erase();
+      final userId = read(userSpace, useGlobal: true);
+
+      GetStorage(userId).erase();
     }
+
+    GetStorage(global).erase();
   }
 }

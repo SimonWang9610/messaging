@@ -1,9 +1,7 @@
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:messaging/models/chat/sync_point.dart';
 import 'package:messaging/models/message/message.dart';
-import 'package:messaging/models/message/message_cluster.dart';
 import 'package:messaging/models/message/message_status.dart';
 import 'package:messaging/utils/utils.dart';
 
@@ -11,7 +9,6 @@ import '../../models/chat/models.dart';
 import '../../models/operation.dart';
 
 import '../base/base_service.dart';
-import '../base/base_cache.dart';
 import '../service_helper.dart';
 import '../database.dart';
 
@@ -22,8 +19,9 @@ import 'chat_cache.dart';
 mixin ChatServiceApi on BaseService<ChatCache> {
   RemoteCollection get chats;
 
-  Future<Chat> startPrivateChat(String email) async {
-    final sortedMembers = sortChatMembers([email, cache.getCurrentUserEmail()]);
+  Future<Chat> startPrivateChat(String userId) async {
+    final currentUser = cache.getCurrentUser();
+    final sortedMembers = sortChatMembers([userId, currentUser.id]);
 
     final membersHash = hashMembers(sortedMembers);
 
@@ -61,7 +59,7 @@ mixin ChatServiceApi on BaseService<ChatCache> {
 
         final clusterPath = await _assignMessageCluster();
         final chatMap = {
-          "id": doc.id,
+          "docId": doc.id,
           "createdOn": createdOn,
           "lastModified": createdOn,
           "members": sortedMembers,
@@ -83,8 +81,9 @@ mixin ChatServiceApi on BaseService<ChatCache> {
   /// because we may ack those history messages
   /// so we must ensure [lastSync] is not decreased
   Future<SyncPoint> syncChat(String chatId, Message lastMessage) async {
-    final collection = Database.remote
-        .collection("users/${cache.getCurrentUserId()}/${Collection.sync}");
+    final currentUser = cache.getCurrentUser();
+    final collection =
+        firestore.collection("users/${currentUser.id}/${Collection.sync}");
 
     final docRef = collection.doc(chatId);
 
@@ -96,7 +95,7 @@ mixin ChatServiceApi on BaseService<ChatCache> {
 
     final map = {
       "chatId": chatId,
-      "msgId": lastMessage.id,
+      "msgId": lastMessage.docId,
       "lastSync": maxLastSync,
       "lastModified": DateTime.now().millisecondsSinceEpoch,
     };
@@ -108,6 +107,7 @@ mixin ChatServiceApi on BaseService<ChatCache> {
     return SyncPoint.fromMap(map);
   }
 
+  // todo: ?it would conflict if acking a message while the message is deleting at the same time
   /// first update messages according to their clusters
   /// then, update the sync point for the chat
   Future<SyncPoint> ackMessages(List<Message> messages) async {
@@ -131,15 +131,15 @@ mixin ChatServiceApi on BaseService<ChatCache> {
       lastMessage = lastMessage.compareCreatedOn(msg);
     }
 
-    final batch = Database.remote.batch();
+    final batch = firestore.batch();
     final lastModified = DateTime.now().millisecondsSinceEpoch;
 
     for (final entry in clusters.entries) {
       final collection =
-          Database.remote.collection("${entry.key}/${Collection.message}");
+          firestore.collection("${entry.key}/${Collection.message}");
 
       entry.value.forEach((msg) {
-        batch.update(collection.doc(msg.id), {
+        batch.update(collection.doc(msg.docId), {
           "status": MessageStatus.read.value,
           "lastModified": lastModified,
         });
@@ -156,9 +156,10 @@ mixin ChatServiceApi on BaseService<ChatCache> {
 
     SyncPoint? point;
 
+    final currentUser = cache.getCurrentUser();
+
     for (final cluster in chat.clusters) {
-      final collection =
-          Database.remote.collection("$cluster/${Collection.message}");
+      final collection = firestore.collection("$cluster/${Collection.message}");
       final query = collection
           .orderBy("createdOn")
           .where("createdOn", isGreaterThanOrEqualTo: chat.syncPoint!.lastSync)
@@ -169,12 +170,12 @@ mixin ChatServiceApi on BaseService<ChatCache> {
           .where("status", isEqualTo: MessageStatus.sent)
           .where(
             "sender",
-            isNotEqualTo: cache.getCurrentUserEmail(),
+            isNotEqualTo: currentUser.id,
           );
 
       final docs = await query.get().then((snapshot) => snapshot.docs);
 
-      final batch = Database.remote.batch();
+      final batch = firestore.batch();
       final lastModified = DateTime.now().millisecondsSinceEpoch;
 
       Map<String, dynamic>? msg;
@@ -191,30 +192,32 @@ mixin ChatServiceApi on BaseService<ChatCache> {
       await batch.commit();
 
       if (msg != null) {
-        point = await syncChat(chat.id, Message.fromMap(msg));
+        point = await syncChat(chat.docId, Message.fromMap(msg));
       }
     }
     return point;
   }
 
   Future<void> getSyncPoints() async {
-    final collection = Database.remote
-        .collection("users/${cache.getCurrentUserId()}/${Collection.sync}");
+    final currentUser = cache.getCurrentUser();
 
-    final checkPoint = CheckPointManager.get(Constants.chatCheckPoint);
+    final collection =
+        firestore.collection("users/${currentUser.id}/${Collection.sync}");
+
+    final checkPoint = cache.getPoint(Constants.chatCheckPoint);
 
     QuerySnapshot<Map<String, dynamic>> snapshot;
 
-    // if (checkPoint != null) {
-    //   final query = collection.where(
-    //     "lastModified",
-    //     isGreaterThan: cache.getLastCheckPoint(),
-    //   );
+    if (checkPoint != null) {
+      final query = collection.where(
+        "lastModified",
+        isGreaterThan: checkPoint,
+      );
 
-    //   snapshot = await query.get();
-    // } else {
-    //   snapshot = await collection.get();
-    // }
+      snapshot = await query.get();
+    } else {
+      snapshot = await collection.get();
+    }
     snapshot = await collection.get();
 
     final syncPointsMap = snapshot.docs.map((doc) => doc.data()).toList();
@@ -232,7 +235,7 @@ mixin ChatServiceApi on BaseService<ChatCache> {
 
   Future<String> _assignClusterFor(
       String collectionName, ClusterType type) async {
-    final collection = Database.remote.collection(collectionName);
+    final collection = firestore.collection(collectionName);
 
     final query = collection
         .orderBy("capacity", descending: true)
@@ -299,9 +302,11 @@ mixin ChatServiceApi on BaseService<ChatCache> {
   }
 
   bool _debugCheckMessageStatus(List<Message> messages) {
+    final currentUser = cache.getCurrentUser();
+
     for (final message in messages) {
       if (message.status != MessageStatus.sent ||
-          message.sender == cache.getCurrentUserEmail()) {
+          message.sender == currentUser.id) {
         return false;
       }
     }

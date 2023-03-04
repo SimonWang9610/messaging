@@ -5,26 +5,33 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:messaging/main.dart';
+import 'package:messaging/utils/store.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test("GetStore container", () async {
+    const first = "TzWi21xBmrL8VpstcZud";
+    const second = "Y8C4TmFks3cWjzzOsTkK";
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await LocalStorage.init(first);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    LocalStorage.write("first", 1);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(LocalStorage.read("first") as int, 1);
+    expect(LocalStorage.read("userId", useGlobal: true) as String, first);
+
+    await LocalStorage.init(second);
+
+    LocalStorage.write("second", 2);
+
+    expect(LocalStorage.read("second") as int, 2);
+    expect(LocalStorage.read("userId", useGlobal: true) as String, second);
+
+    await LocalStorage.init(first);
+
+    expect(LocalStorage.read("first") as int, 1);
+
+    LocalStorage.clear();
   });
 }
