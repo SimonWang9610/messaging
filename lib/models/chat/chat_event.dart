@@ -2,11 +2,11 @@ import 'chat.dart';
 import '../operation.dart';
 
 enum ClusterType {
-  reserved(0),
-  personal(1),
-  group(2);
+  reserved('reserved'),
+  personal('personal'),
+  group('group');
 
-  final int value;
+  final String value;
   const ClusterType(this.value);
 }
 

@@ -22,17 +22,14 @@ mixin ChatDatabaseMapping on DatabaseMapping<Chat> {
         ? json.decode(row["lastMessage"] as String) as Map<String, dynamic>
         : null;
 
-    final clusters = (row["clusters"] as String)
-        .split(",")
-        .where((element) => element.isNotEmpty)
-        .toList();
+    final cluster = row['cluster'];
 
     return Chat(
       docId: row['docId'] as String,
       createdOn: row['createdOn'] as int,
       lastModified: row['lastModified'] as int,
       members: members,
-      clusters: clusters,
+      cluster: cluster,
       membersHash: row['membersHash'] as String,
       syncPoint: syncPointMap != null ? SyncPoint.fromMap(syncPointMap) : null,
       lastMessage:
@@ -51,12 +48,11 @@ mixin ChatDatabaseMapping on DatabaseMapping<Chat> {
     map["syncPoint"] =
         data.syncPoint != null ? json.encode(data.syncPoint?.toMap()) : null;
 
-    map["clusters"] = data.clusters.join(",");
+    map["cluster"] = data.cluster;
+
     map["lastMessage"] = data.lastMessage != null
         ? json.encode(data.lastMessage?.toMap())
         : null;
-
-    print("[toDatabaseMap]: $map");
 
     return map;
   }
@@ -73,7 +69,7 @@ mixin ChatDatabaseMapping on DatabaseMapping<Chat> {
         "syncPoint": map["syncPoint"],
         "lastMessage": map["lastMessage"],
         "members": map["members"],
-        "clusters": map["clusters"],
+        "cluster": map["cluster"],
       },
     );
   }

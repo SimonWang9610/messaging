@@ -16,7 +16,9 @@ void main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  await DatabaseManager.initLocalDatabase(false);
+  await DatabaseManager.initLocalDatabase(true);
+
+  // await LocalStorage.clear(onlyGlobal: false);
 
   // await LocalStorage.init("TzWi21xBmrL8VpstcZud");
   // LocalStorage.clear(onlyGlobal: false);

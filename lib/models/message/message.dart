@@ -70,7 +70,7 @@ class Message {
       );
 
   bool get isPlainText => type == MessageType.text;
-  String get uniqueId => "$chatId-$cluster-$docId";
+  String get uniqueId => "$chatId-$docId";
 
   Message copyWith({
     String? docId,

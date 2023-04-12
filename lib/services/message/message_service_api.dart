@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:messaging/models/operation.dart';
-import 'package:messaging/utils/constants.dart';
+import 'package:messaging/services/service_helper.dart';
 
 import '../../models/message/models.dart';
 
@@ -9,6 +9,11 @@ import '../database.dart';
 import 'message_cache.dart';
 
 mixin MessageServiceApi on BaseService<MessageCache> {
+  CollectionReference<Map<String, dynamic>> getCollection(String clusterPath) {
+    final collectionPath = getMessageCollectionPath(clusterPath);
+    return firestore.collection(collectionPath);
+  }
+
   /// when the message is sent to firestore, [MessageCache.dispatch] would emit a [Message] whose status is [MessageStatus.sending]
   /// if the firestore adds the new [Message] successfully, it would emit the document change handled by [MessageService] directly
   /// if some errors happens, it turns out the [Message] failed to be sent
@@ -19,8 +24,7 @@ mixin MessageServiceApi on BaseService<MessageCache> {
   }) async {
     // todo: check if the receiver is the sender's friend
 
-    final collection =
-        firestore.collection("${cluster.path}/${Collection.message}");
+    final collection = getCollection(cluster.path);
 
     final docRef = collection.doc();
 
@@ -64,8 +68,7 @@ mixin MessageServiceApi on BaseService<MessageCache> {
   }
 
   void resendMessage(Message message) {
-    final collection =
-        firestore.collection("${message.cluster}/${Collection.message}");
+    final collection = getCollection(message.cluster);
 
     final docRef = collection.doc(message.docId);
 
@@ -104,8 +107,8 @@ mixin MessageServiceApi on BaseService<MessageCache> {
   }
 
   void rollbackMessage(Message message) async {
-    final collection =
-        firestore.collection("${message.cluster}/${Collection.message}");
+    final collection = getCollection(message.cluster);
+
     final docRef = collection.doc(message.docId);
 
     await docRef.delete();

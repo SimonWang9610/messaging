@@ -30,7 +30,7 @@ class MessagePool extends BasePool<MessageCache, MessageService> {
 
     cache.subscribe(chat);
     service.refreshCluster(
-      MessageCluster(path: chat.clusters.last, chatId: chat.docId),
+      MessageCluster(path: chat.cluster, chatId: chat.docId),
     );
     return cache.stream;
   }

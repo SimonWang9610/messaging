@@ -24,7 +24,7 @@ class Schema {
     members TEXT NOT NULL,
     membersHash TEXT NOT NULL,
     belongTo TEXT NOT NULL,
-    clusters TEXT NOT NULL,
+    cluster TEXT NOT NULL,
     createdOn INTEGER NOT NULL,
     lastModified INTEGER NOT NULL,
     syncPoint TEXT NULL,
@@ -47,7 +47,7 @@ class Schema {
     body TEXT NOT NULL,
     type TEXT NOT NULL,
     quoteId TEXT NULL,
-    PRIMARY KEY (docId, chatId, cluster, belongTo)
+    PRIMARY KEY (docId, chatId, belongTo)
   )
                           """;
 

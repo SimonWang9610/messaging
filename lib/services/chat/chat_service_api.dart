@@ -57,14 +57,16 @@ mixin ChatServiceApi on BaseService<ChatCache> {
         final doc = chats.doc();
         final createdOn = DateTime.now().millisecondsSinceEpoch;
 
-        final clusterPath = await _assignMessageCluster();
+        final clusterPath = _assignClusterFor(
+            Collection.messageClusters, ClusterType.personal, doc.id);
+
         final chatMap = {
           "docId": doc.id,
           "createdOn": createdOn,
           "lastModified": createdOn,
           "members": sortedMembers,
           "membersHash": membersHash,
-          "clusters": [clusterPath],
+          "cluster": clusterPath,
         };
 
         await doc.set(
@@ -135,8 +137,9 @@ mixin ChatServiceApi on BaseService<ChatCache> {
     final lastModified = DateTime.now().millisecondsSinceEpoch;
 
     for (final entry in clusters.entries) {
-      final collection =
-          firestore.collection("${entry.key}/${Collection.message}");
+      final path = getMessageCollectionPath(entry.key);
+
+      final collection = firestore.collection(path);
 
       entry.value.forEach((msg) {
         batch.update(collection.doc(msg.docId), {
@@ -158,43 +161,44 @@ mixin ChatServiceApi on BaseService<ChatCache> {
 
     final currentUser = cache.getCurrentUser();
 
-    for (final cluster in chat.clusters) {
-      final collection = firestore.collection("$cluster/${Collection.message}");
-      final query = collection
-          .orderBy("createdOn")
-          .where("createdOn", isGreaterThanOrEqualTo: chat.syncPoint!.lastSync)
-          .where(
-            "createdOn",
-            isLessThan: DateTime.now(),
-          )
-          .where("status", isEqualTo: MessageStatus.sent)
-          .where(
-            "sender",
-            isNotEqualTo: currentUser.id,
-          );
+    final path = getMessageCollectionPath(chat.cluster);
 
-      final docs = await query.get().then((snapshot) => snapshot.docs);
+    final collection = firestore.collection(path);
+    final query = collection
+        .orderBy("createdOn")
+        .where("createdOn", isGreaterThanOrEqualTo: chat.syncPoint!.lastSync)
+        .where(
+          "createdOn",
+          isLessThan: DateTime.now(),
+        )
+        .where("status", isEqualTo: MessageStatus.sent)
+        .where(
+          "sender",
+          isNotEqualTo: currentUser.id,
+        );
 
-      final batch = firestore.batch();
-      final lastModified = DateTime.now().millisecondsSinceEpoch;
+    final docs = await query.get().then((snapshot) => snapshot.docs);
 
-      Map<String, dynamic>? msg;
+    final batch = firestore.batch();
+    final lastModified = DateTime.now().millisecondsSinceEpoch;
 
-      for (final doc in docs) {
-        msg = doc.data();
+    Map<String, dynamic>? msg;
 
-        batch.update(doc.reference, {
-          "status": MessageStatus.read.value,
-          "lastModified": lastModified,
-        });
-      }
+    for (final doc in docs) {
+      msg = doc.data();
 
-      await batch.commit();
-
-      if (msg != null) {
-        point = await syncChat(chat.docId, Message.fromMap(msg));
-      }
+      batch.update(doc.reference, {
+        "status": MessageStatus.read.value,
+        "lastModified": lastModified,
+      });
     }
+
+    await batch.commit();
+
+    if (msg != null) {
+      point = await syncChat(chat.docId, Message.fromMap(msg));
+    }
+
     return point;
   }
 
@@ -225,80 +229,20 @@ mixin ChatServiceApi on BaseService<ChatCache> {
     await cache.updateSyncPoints(syncPointsMap);
   }
 
-  /// see [ClusterType]
-  Future<String> _assignMessageCluster(
-          [ClusterType type = ClusterType.personal]) =>
-      _assignClusterFor(Collection.messageClusters, type);
-
   // Future<String> assignChatCluster([ClusterType type = ClusterType.private]) =>
   //     _assignClusterFor(chatCluster, type);
 
-  Future<String> _assignClusterFor(
-      String collectionName, ClusterType type) async {
+  String _assignClusterFor(
+      String collectionName, ClusterType type, String chatDocId) {
     final collection = firestore.collection(collectionName);
 
-    final query = collection
-        .orderBy("capacity", descending: true)
-        .where("capacity", isGreaterThan: 0)
-        .where("type", isEqualTo: type.value)
-        .limit(1);
+    final seq = hashChatIdForCollection(chatDocId);
 
-    var docRef = await query.get().then((snapshot) {
-      if (snapshot.size > 0) {
-        return snapshot.docs.first.reference;
-      } else {
-        return null;
-      }
-    });
+    final path = "${type.value}-$seq";
 
-    if (docRef == null) {
-      final clusterCount =
-          await collection.count().get().then((snapshot) => snapshot.count);
-      final clusterId = createClusterId(Collection.clusterPrefix,
-          type: type, count: clusterCount + 1);
+    final doc = collection.doc(path);
 
-      docRef = collection.doc(clusterId);
-    }
-
-    final clusterData = await docRef.get().then((snapshot) => snapshot.data());
-
-    final capacity =
-        (clusterData?["capacity"] as int?) ?? getCapacityByType(type);
-    final clusterType = (clusterData?["type"] as int?) ?? type.value;
-
-    assert(_debugCheckClusterType(docRef.id, clusterType),
-        "${docRef.id} not follow [cluster-<type>-<count>] rule");
-
-    await docRef.set(
-      {
-        "capacity": capacity - 1,
-        "type": clusterType,
-      },
-      SetOptions(merge: true),
-    );
-    return docRef.path;
-  }
-
-  bool _debugCheckClusterType(String clusterId, int type) {
-    final splits = clusterId.split("-");
-
-    if (splits.length != 3) {
-      print("$clusterId not follow [cluster-type-count] rule");
-      return false;
-    } else {
-      return int.tryParse(splits[1]) == type;
-    }
-  }
-
-  int getCapacityByType(ClusterType type) {
-    switch (type) {
-      case ClusterType.reserved:
-        return 100;
-      case ClusterType.personal:
-        return 10000;
-      case ClusterType.group:
-        return 500;
-    }
+    return doc.id;
   }
 
   bool _debugCheckMessageStatus(List<Message> messages) {

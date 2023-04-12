@@ -16,7 +16,7 @@ class Chat {
   final int createdOn;
   final int lastModified;
   final List<String> members;
-  final List<String> clusters;
+  final String cluster;
   final String membersHash;
 
   /// local data
@@ -28,7 +28,7 @@ class Chat {
     required this.createdOn,
     required this.lastModified,
     required this.members,
-    required this.clusters,
+    required this.cluster,
     required this.membersHash,
     this.syncPoint,
     this.lastMessage,
@@ -40,7 +40,7 @@ class Chat {
     int? createdOn,
     int? lastModified,
     List<String>? members,
-    List<String>? clusters,
+    String? cluster,
     String? membersHash,
     SyncPoint? syncPoint,
     Message? lastMessage,
@@ -51,7 +51,7 @@ class Chat {
       createdOn: createdOn ?? this.createdOn,
       lastModified: lastModified ?? this.lastModified,
       members: members ?? this.members,
-      clusters: clusters ?? this.clusters,
+      cluster: cluster ?? this.cluster,
       membersHash: membersHash ?? this.membersHash,
       syncPoint: syncPoint ?? this.syncPoint,
       lastMessage: lastMessage ?? this.lastMessage,
@@ -60,7 +60,7 @@ class Chat {
   }
 
   MessageCluster get latestCluster =>
-      MessageCluster(path: clusters.last, chatId: docId);
+      MessageCluster(path: cluster, chatId: docId);
 
   Chat merge(Chat? other) {
     if (other == null ||
@@ -70,8 +70,6 @@ class Chat {
     }
 
     final needReplace = lastModified < other.lastModified;
-
-    final mergedClusters = !needReplace ? clusters : other.clusters;
 
     // typically for group chat
     // because members may add/removed
@@ -86,7 +84,7 @@ class Chat {
       createdOn: createdOn,
       lastModified: max(lastModified, other.lastModified),
       members: members,
-      clusters: mergedClusters,
+      cluster: cluster,
       membersHash: hash,
       lastMessage: message ?? lastMessage ?? other.lastMessage,
       unread: count,
@@ -109,7 +107,7 @@ class Chat {
       'createdOn': createdOn,
       'lastModified': lastModified,
       'members': members,
-      'clusters': clusters,
+      'cluster': cluster,
       'membersHash': membersHash,
       'syncPoint': syncPoint?.toMap(),
       'lastMessage': lastMessage?.toMap(),
@@ -124,7 +122,7 @@ class Chat {
       createdOn: map['createdOn'] as int,
       lastModified: map['lastModified'] as int,
       members: List<String>.from(map['members']),
-      clusters: List<String>.from(map['clusters']),
+      cluster: map['cluster'] as String,
       membersHash: map['membersHash'] as String,
       // syncPoint: map['syncPoint'] != null
       //     ? SyncPoint.fromMap(map['syncPoint'] as Map<String, dynamic>)
@@ -143,7 +141,7 @@ class Chat {
 
   @override
   String toString() {
-    return 'Chat(docId: $docId, createdOn: $createdOn, lastModified: $lastModified, members: $members, clusters: $clusters, membersHash: $membersHash, syncPoint: $syncPoint, lastMessage: $lastMessage, unread: $unread)';
+    return 'Chat(docId: $docId, createdOn: $createdOn, lastModified: $lastModified, members: $members, cluster: $cluster, membersHash: $membersHash, syncPoint: $syncPoint, lastMessage: $lastMessage, unread: $unread)';
   }
 
   @override
@@ -154,7 +152,7 @@ class Chat {
         other.createdOn == createdOn &&
         other.lastModified == lastModified &&
         listEquals(other.members, members) &&
-        listEquals(other.clusters, clusters) &&
+        cluster == other.cluster &&
         other.membersHash == membersHash &&
         other.syncPoint == syncPoint &&
         other.lastMessage == lastMessage &&
@@ -167,7 +165,7 @@ class Chat {
         createdOn.hashCode ^
         lastModified.hashCode ^
         members.hashCode ^
-        clusters.hashCode ^
+        cluster.hashCode ^
         membersHash.hashCode ^
         syncPoint.hashCode ^
         lastMessage.hashCode ^

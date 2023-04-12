@@ -57,7 +57,9 @@ class LocalStorage {
     if (!onlyGlobal) {
       final userId = read(userSpace, useGlobal: true);
 
-      GetStorage(userId).erase();
+      if (userId != null) {
+        GetStorage(userId).erase();
+      }
     }
 
     GetStorage(global).erase();

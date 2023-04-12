@@ -61,8 +61,8 @@ class MessageService extends BaseService<MessageCache> with MessageServiceApi {
     }
   }
 
-  /// the collection would be 'message-clusters/cluster-<type>-<count>/messages'
-  /// [MessageCluster.path] would be 'message-clusters/cluster-<type>-<count>'
+  /// the collection would be 'message-clusters/cluster-<type>-<seq>/messages'
+  /// [MessageCluster.path] would be 'message-clusters/cluster-<type>-<seq>'
   ///
   /// if the current device has checked some messages, we only need to load those messages that
   /// 1) belong to [messageCluster]
@@ -74,8 +74,11 @@ class MessageService extends BaseService<MessageCache> with MessageServiceApi {
     final checkPoint =
         cache.getPoint("${Constants.chatCheckPoint}-${messageCluster.chatId}");
 
+    final collectionPath =
+        '${Collection.messageClusters}/${messageCluster.path}/${Collection.message}';
+
     var query = firestore
-        .collection("${messageCluster.path}/${Collection.message}")
+        .collection(collectionPath)
         .where("chatId", isEqualTo: messageCluster.chatId);
 
     if (checkPoint != null) {

@@ -25,11 +25,11 @@ class FriendService extends BaseService<FriendCache> with FriendServiceApi {
         "${Collection.user}/${currentUser.id}/${Collection.friend}";
     QueryMap query = firestore.collection(collectionName);
 
-    if (checkPoint != null) {
-      print(
-          "friend service: ${DateTime.fromMillisecondsSinceEpoch(checkPoint)}");
-      query = query.where("lastModified", isGreaterThan: checkPoint);
-    }
+    // if (checkPoint != null) {
+    //   print(
+    //       "friend service: ${DateTime.fromMillisecondsSinceEpoch(checkPoint)}");
+    //   query = query.where("lastModified", isGreaterThan: checkPoint);
+    // }
 
     final sub = query.snapshots().listen(
           handler,

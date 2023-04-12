@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:messaging/models/chat/models.dart';
+import 'package:messaging/utils/utils.dart';
 
 import '../models/operation.dart';
 import 'base/service_error.dart';
@@ -63,4 +64,21 @@ Operation mapToOperation(DocumentChangeType type) {
     case DocumentChangeType.removed:
       return Operation.deleted;
   }
+}
+
+const _clusterCount = 4;
+
+int hashChatIdForCollection(String chatDocId) {
+  final encoded = utf8.encode(chatDocId);
+
+  final hash = sha256.convert(encoded).bytes;
+
+  final total =
+      hash.fold(0, (previousValue, element) => previousValue + element);
+
+  return total % _clusterCount;
+}
+
+String getMessageCollectionPath(String clusterPath) {
+  return "${Collection.messageClusters}/$clusterPath/${Collection.message}";
 }
