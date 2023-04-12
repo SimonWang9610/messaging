@@ -30,8 +30,9 @@ class ChatService extends BaseService<ChatCache> with ChatServiceApi {
   /// and [createdOn] is greater than the check point
   /// if the current device never sync with the firestore, the check point would be null
   /// for this case, the current device would sync all chats in firestore
-  void _listenChatChange() {
-    final checkPoint = cache.getPoint(Constants.chatCheckPoint);
+  Future<void> _listenChatChange() async {
+    final checkPoint = await cache.getCheckPoint(
+        Constants.chatCheckPoint, cache.getCurrentUser().id);
 
     var query = chats
         .where(

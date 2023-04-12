@@ -14,22 +14,24 @@ class FriendService extends BaseService<FriendCache> with FriendServiceApi {
   @override
   Future<void> initListeners() async {
     await getRemoteFriends();
-    _listenFriendChange(handleFirestoreChange);
+    await _listenFriendChange(handleFirestoreChange);
   }
 
-  void _listenFriendChange(CollectionChangeHandler handler) {
-    final checkPoint = cache.getPoint(Constants.friendCheckPoint);
-
+  Future<void> _listenFriendChange(CollectionChangeHandler handler) async {
     final currentUser = cache.getCurrentUser();
+
+    final checkPoint =
+        await cache.getCheckPoint(Constants.friendCheckPoint, currentUser.id);
+
     final collectionName =
         "${Collection.user}/${currentUser.id}/${Collection.friend}";
     QueryMap query = firestore.collection(collectionName);
 
-    // if (checkPoint != null) {
-    //   print(
-    //       "friend service: ${DateTime.fromMillisecondsSinceEpoch(checkPoint)}");
-    //   query = query.where("lastModified", isGreaterThan: checkPoint);
-    // }
+    if (checkPoint != null) {
+      print(
+          "friend service: ${DateTime.fromMillisecondsSinceEpoch(checkPoint)}");
+      query = query.where("lastModified", isGreaterThan: checkPoint);
+    }
 
     final sub = query.snapshots().listen(
           handler,

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:messaging/models/message/models.dart';
 import 'package:messaging/models/operation.dart';
+import 'package:messaging/services/base/check_point.dart';
 import 'package:messaging/services/chat/local_database_mapping.dart';
 import 'package:messaging/storage/sql_builder.dart';
 import 'package:messaging/utils/utils.dart';
@@ -49,10 +50,11 @@ class ChatCache extends BaseCache<Chat, ChatEvent> with ChatDatabaseMapping {
 
   @override
   Future<void> init() async {
+    final currentUser = getCurrentUser();
     final query = QueryBuilder(
       "chats",
       where: "belongTo = ?",
-      whereArgs: [getCurrentUser().id],
+      whereArgs: [currentUser.id],
     );
     final chats = await readFromLocalDatabase(query);
 
@@ -60,7 +62,8 @@ class ChatCache extends BaseCache<Chat, ChatEvent> with ChatDatabaseMapping {
       _localChats[chat.docId] = chat;
     });
 
-    _latterLastModified = getPoint(Constants.chatCheckPoint);
+    _latterLastModified =
+        await getCheckPoint(Constants.chatCheckPoint, currentUser.id);
   }
 
   /// for all changes dispatched by [dispatch]/[dispatchAll]
@@ -127,10 +130,16 @@ class ChatCache extends BaseCache<Chat, ChatEvent> with ChatDatabaseMapping {
   @override
   void afterCommit(committed) {
     if (committed) {
-      storePoint(
-        Constants.chatCheckPoint,
-        checkPoint: _latterLastModified,
+      // storePoint(
+      //   Constants.chatCheckPoint,
+      //   checkPoint: _latterLastModified,
+      // );
+
+      saveCheckpoint(
+        points: [CheckPoint(Constants.chatCheckPoint, _latterLastModified!)],
+        belongTo: getCurrentUser().id,
       );
+
       scheduleFlushUpdatesForUI();
     }
   }

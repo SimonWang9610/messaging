@@ -82,3 +82,11 @@ int hashChatIdForCollection(String chatDocId) {
 String getMessageCollectionPath(String clusterPath) {
   return "${Collection.messageClusters}/$clusterPath/${Collection.message}";
 }
+
+String getFriendCollectionPath(String userId) {
+  return "${Collection.user}/$userId/${Collection.friend}";
+}
+
+String getSyncPointPath(String userId) {
+  return "${Collection.user}/$userId/${Collection.sync}";
+}

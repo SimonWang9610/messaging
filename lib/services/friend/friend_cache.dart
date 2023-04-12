@@ -4,6 +4,7 @@ import 'package:messaging/models/friend/friend.dart';
 import 'package:messaging/models/friend/friend_event.dart';
 import 'package:messaging/models/friend/friend_status.dart';
 import 'package:messaging/services/base/base_cache.dart';
+import 'package:messaging/services/base/check_point.dart';
 import 'package:messaging/services/friend/local_database_mapping.dart';
 import 'package:messaging/storage/sql_builder.dart';
 import 'package:messaging/utils/utils.dart';
@@ -24,17 +25,21 @@ class FriendCache extends BaseCache<Friend, FriendEvent>
 
   @override
   Future<void> init() async {
+    final currentUser = getCurrentUser();
     final query = QueryBuilder(
       "friends",
       where: "belongTo = ?",
-      whereArgs: [getCurrentUser().id],
+      whereArgs: [currentUser.id],
     );
+
     final friends = await readFromLocalDatabase(query);
 
     friends.forEach((element) {
       _localFriends[element.docId] = element;
     });
-    _latterLastModified = getPoint(Constants.friendCheckPoint);
+
+    _latterLastModified =
+        await getCheckPoint(Constants.friendCheckPoint, currentUser.id);
   }
 
   @override
@@ -106,7 +111,10 @@ class FriendCache extends BaseCache<Friend, FriendEvent>
   @override
   void afterCommit(committed) {
     if (committed) {
-      storePoint(Constants.friendCheckPoint, checkPoint: _latterLastModified);
+      saveCheckpoint(
+        points: [CheckPoint(Constants.friendCheckPoint, _latterLastModified!)],
+        belongTo: getCurrentUser().id,
+      );
       scheduleFlushUpdatesForUI();
     }
   }
@@ -135,7 +143,10 @@ class FriendCache extends BaseCache<Friend, FriendEvent>
     }
 
     if (lastModified != null) {
-      await storePoint(Constants.friendCheckPoint, checkPoint: lastModified);
+      await saveCheckpoint(
+        points: [CheckPoint(Constants.friendCheckPoint, lastModified)],
+        belongTo: getCurrentUser().id,
+      );
     }
 
     scheduleCommit(debugLabel: "[FriendCache].syncRemoteFriends");

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:messaging/services/base/check_point.dart';
 import 'package:messaging/storage/database_interface.dart';
 
 import 'package:messaging/storage/database_manager.dart';
@@ -48,7 +49,7 @@ abstract class DatabaseMapping<T> {
 
       await Future.wait(operations);
     } catch (e) {
-      print(e);
+      Log.e("[writeToLocalDatabase] error", e);
     }
   }
 
@@ -61,8 +62,64 @@ abstract class DatabaseMapping<T> {
     try {
       return db.load(query, mapToModel: mapToModel);
     } catch (e) {
-      print(e);
+      Log.e("[readFromLocalDatabase] error", e);
+
       return [];
+    }
+  }
+
+  Future<void> saveCheckpoint({
+    required List<CheckPoint> points,
+    required String belongTo,
+  }) async {
+    if (kIsWeb) return;
+
+    try {
+      Log.d("saving checkpoint: $points");
+      return db.upsert<CheckPoint>(
+        points,
+        upsertBuilder: (point) {
+          return UpsertBuilder(
+            "checkPoints",
+            rowData: {
+              "id": point.id,
+              "point": point.value,
+              "belongTo": belongTo,
+            },
+            conflictColumns: ["id", "belongTo"],
+            conflictUpdates: {
+              "point": point.value,
+            },
+          );
+        },
+      );
+    } catch (e) {
+      Log.e("[saveCheckpoint] error", e);
+    }
+  }
+
+  Future<int?> getCheckPoint(String key, String belongTo) async {
+    if (kIsWeb) return null;
+
+    final query = QueryBuilder(
+      "checkPoints",
+      columns: ["point"],
+      where: "id = ? AND belongTo = ?",
+      whereArgs: [key, belongTo],
+      limit: 1,
+    );
+
+    try {
+      final result = await db.load<int>(
+        query,
+        mapToModel: (row) => row["point"] as int,
+      );
+
+      return result.isNotEmpty ? result.first : null;
+    } catch (e) {
+      Log.e("[getCheckPoint] error", e);
+
+      return null;
     }
   }
 

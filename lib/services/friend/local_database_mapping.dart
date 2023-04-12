@@ -1,7 +1,4 @@
-import 'package:flutter/foundation.dart';
 import 'package:messaging/storage/sql_builder.dart';
-import 'package:messaging/utils/utils.dart';
-import 'package:messaging/storage/database_manager.dart';
 import 'package:messaging/services/base/database_mapping.dart';
 import 'package:messaging/models/friend/friend.dart';
 

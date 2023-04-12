@@ -16,14 +16,12 @@ void main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  await DatabaseManager.initLocalDatabase(true);
+  const eraseDatabase =
+      bool.fromEnvironment('eraseDatabase', defaultValue: false);
 
-  // await LocalStorage.clear(onlyGlobal: false);
+  Log.w("eraseDatabase: $eraseDatabase");
 
-  // await LocalStorage.init("TzWi21xBmrL8VpstcZud");
-  // LocalStorage.clear(onlyGlobal: false);
-  // await LocalStorage.init("Y8C4TmFks3cWjzzOsTkK");
-  // LocalStorage.clear(onlyGlobal: false);
+  await DatabaseManager.initLocalDatabase(eraseDatabase);
 
   runApp(const MyApp());
 }

@@ -84,8 +84,7 @@ mixin ChatServiceApi on BaseService<ChatCache> {
   /// so we must ensure [lastSync] is not decreased
   Future<SyncPoint> syncChat(String chatId, Message lastMessage) async {
     final currentUser = cache.getCurrentUser();
-    final collection =
-        firestore.collection("users/${currentUser.id}/${Collection.sync}");
+    final collection = firestore.collection(getSyncPointPath(currentUser.id));
 
     final docRef = collection.doc(chatId);
 
@@ -205,10 +204,11 @@ mixin ChatServiceApi on BaseService<ChatCache> {
   Future<void> getSyncPoints() async {
     final currentUser = cache.getCurrentUser();
 
-    final collection =
-        firestore.collection("users/${currentUser.id}/${Collection.sync}");
+    final collection = firestore.collection(getSyncPointPath(currentUser.id));
 
-    final checkPoint = cache.getPoint(Constants.chatCheckPoint);
+    // final checkPoint = cache.getPoint(Constants.chatCheckPoint);
+    final checkPoint =
+        await cache.getCheckPoint(Constants.chatCheckPoint, currentUser.id);
 
     QuerySnapshot<Map<String, dynamic>> snapshot;
 
@@ -228,9 +228,6 @@ mixin ChatServiceApi on BaseService<ChatCache> {
 
     await cache.updateSyncPoints(syncPointsMap);
   }
-
-  // Future<String> assignChatCluster([ClusterType type = ClusterType.private]) =>
-  //     _assignClusterFor(chatCluster, type);
 
   String _assignClusterFor(
       String collectionName, ClusterType type, String chatDocId) {

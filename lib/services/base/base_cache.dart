@@ -8,7 +8,7 @@ import 'package:messaging/services/base/database_mapping.dart';
 import 'package:messaging/utils/utils.dart';
 
 /// used to [dispatch] events created from [BaseService]
-abstract class BaseCache<T, E> with DatabaseMapping<T>, CheckPointManager {
+abstract class BaseCache<T, E> with DatabaseMapping<T> {
   final StreamController<int> eventEmitter;
   final ValueNotifier<bool> _hasCommitScheduled = ValueNotifier(false);
 
@@ -70,35 +70,7 @@ abstract class BaseCache<T, E> with DatabaseMapping<T>, CheckPointManager {
 
     await eventEmitter.close();
   }
-}
 
-/// if the current user has never logged in this device, his/her check points should be null
-/// and their check points should be isolated for different [User]
-///
-/// through the check point mechanism, we could know the last time that the device loaded remote data for the current user
-/// as a result, we just need to load those data changed after the check point
-/// since we ensure changes happened before check points had been committed into local database
-mixin CheckPointManager {
-  Future<void> storePoint(
-    String key, {
-    int? checkPoint,
-    bool shouldFallback = false,
-  }) async {
-    // todo: only for testing on web
-    if (kIsWeb) return;
-
-    final effectiveCheckPoint = checkPoint ??
-        (shouldFallback ? DateTime.now().millisecondsSinceEpoch : null);
-    await LocalStorage.write(key, effectiveCheckPoint);
-  }
-
-  int? getPoint(String key) {
-    return LocalStorage.read(key);
-  }
-
-  /// once users logged in, they should write their user infos in the global container
-  /// so that app could know which user is active currently
-  /// by doing so, we could separate check point containers fro different users
   User getCurrentUser() {
     final map = LocalStorage.read("user", useGlobal: true);
     return User.fromMap(json.decode(map) as Map<String, dynamic>);

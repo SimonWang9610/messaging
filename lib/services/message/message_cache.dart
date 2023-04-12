@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:messaging/models/operation.dart';
+import 'package:messaging/services/base/check_point.dart';
 import 'package:messaging/services/chat/chat_pool.dart';
 import 'package:messaging/services/message/local_database_mapping.dart';
 import 'package:messaging/storage/sql_builder.dart';
@@ -113,10 +114,20 @@ class MessageCache extends BaseCache<Message, MessageEvent>
       if (lastMessages.isNotEmpty) {
         ChatPool().cache.dispatchLastMessages(lastMessages);
 
-        lastMessages.forEach((key, value) {
-          storePoint("${Constants.chatCheckPoint}-$key",
-              checkPoint: value.lastModified);
-        });
+        final belongTo = getCurrentUser().id;
+
+        final points = <CheckPoint>[];
+        for (final msg in lastMessages.entries) {
+          points.add(
+            CheckPoint(msg.key, msg.value.lastModified),
+          );
+        }
+        saveCheckpoint(points: points, belongTo: belongTo);
+
+        // lastMessages.forEach((key, value) {
+        //   // storePoint("${Constants.chatCheckPoint}-$key",
+        //   //     checkPoint: value.lastModified);
+        // });
       }
 
       _extractMessageForSubscriber();
@@ -225,10 +236,19 @@ mixin MessageManagerForUI on BaseCache<Message, MessageEvent> {
 
   void unsubscribe() {
     if (_subscriber != null) {
-      storePoint(
-        "${Constants.chatCheckPoint}-${_subscriber!.docId}",
-        shouldFallback: true,
+      saveCheckpoint(
+        points: [
+          CheckPoint(
+            _subscriber!.docId,
+            DateTime.now().millisecondsSinceEpoch,
+          )
+        ],
+        belongTo: getCurrentUser().id,
       );
+      // storePoint(
+      //   "${Constants.chatCheckPoint}-${_subscriber!.docId}",
+      //   shouldFallback: true,
+      // );
     }
 
     final lastMessage = _messages.isNotEmpty

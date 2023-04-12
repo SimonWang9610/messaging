@@ -38,7 +38,8 @@ class _IoDatabase extends DatabaseInterface {
       await Future.wait([
         txn.execute(Schema.friend),
         txn.execute(Schema.chat),
-        txn.execute(Schema.message)
+        txn.execute(Schema.message),
+        txn.execute(Schema.checkPoints),
       ]);
     });
     print("create database");
@@ -58,7 +59,8 @@ class _IoDatabase extends DatabaseInterface {
       await Future.wait([
         txn.execute(Schema.friend),
         txn.execute(Schema.chat),
-        txn.execute(Schema.message)
+        txn.execute(Schema.message),
+        txn.execute(Schema.checkPoints),
       ]);
       print("recreate database");
     });

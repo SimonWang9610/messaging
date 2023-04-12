@@ -19,9 +19,11 @@ class MessageService extends BaseService<MessageCache> with MessageServiceApi {
 
   @override
   Future<void> initListeners() async {
+    final futures = <Future>[];
     for (final cluster in _clusters) {
-      _listenClusterChange(cluster);
+      futures.add(_listenClusterChange(cluster));
     }
+    await Future.wait(futures);
   }
 
   @override
@@ -70,9 +72,14 @@ class MessageService extends BaseService<MessageCache> with MessageServiceApi {
   /// if using createdOn to filter messages, we cannot detect the changes happened after the check point
   /// e.g., we cannot know whether messages are read or loaded because those messages may be created before the check point
   /// consequently, the createdOn filter would never push updates related to such messages
-  void _listenClusterChange(MessageCluster messageCluster) {
-    final checkPoint =
-        cache.getPoint("${Constants.chatCheckPoint}-${messageCluster.chatId}");
+  Future<void> _listenClusterChange(MessageCluster messageCluster) async {
+    // final checkPoint =
+    //     cache.getPoint("${Constants.chatCheckPoint}-${messageCluster.chatId}");
+
+    final checkPoint = await cache.getCheckPoint(
+      "${Constants.chatCheckPoint}-${messageCluster.chatId}",
+      cache.getCurrentUser().id,
+    );
 
     final collectionPath =
         '${Collection.messageClusters}/${messageCluster.path}/${Collection.message}';

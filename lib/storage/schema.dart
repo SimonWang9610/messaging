@@ -51,9 +51,19 @@ class Schema {
   )
                           """;
 
+  static const checkPoints = """
+  CREATE TABLE checkPoints (
+    belongTo TEXT NOT NULL,
+    id TEXT NOT NULL,
+    point INTEGER NOT NULL,
+    PRIMARY KEY (id, belongTo)
+  )
+  """;
+
   static const List<String> debugDrops = [
     "DROP TABLE IF EXISTS friends",
     "DROP TABLE IF EXISTS chats",
-    "DROP TABLE IF EXISTS messages"
+    "DROP TABLE IF EXISTS messages",
+    "DROP TABLE IF EXISTS checkPoints",
   ];
 }

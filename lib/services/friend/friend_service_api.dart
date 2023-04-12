@@ -15,10 +15,9 @@ mixin FriendServiceApi on BaseService<FriendCache> {
 
     final docId = generateFriendDocId(currentUser.id, user.id);
 
-    final selfName =
-        "${Collection.user}/${currentUser.id}/${Collection.friend}";
+    final selfName = getFriendCollectionPath(currentUser.id);
 
-    final otherName = "${Collection.user}/${user.id}/${Collection.friend}";
+    final otherName = getFriendCollectionPath(user.id);
 
     final selfDoc = firestore.collection(selfName).doc(docId);
     final otherDoc = firestore.collection(otherName).doc(docId);
@@ -71,11 +70,9 @@ mixin FriendServiceApi on BaseService<FriendCache> {
 
     final currentUser = cache.getCurrentUser();
 
-    final selfName =
-        "${Collection.user}/${currentUser.id}/${Collection.friend}";
+    final selfName = getFriendCollectionPath(currentUser.id);
 
-    final otherName =
-        "${Collection.user}/${friend.userId}/${Collection.friend}";
+    final otherName = getFriendCollectionPath(friend.userId);
 
     final selfDoc = firestore.collection(selfName).doc(friend.docId);
     final otherDoc = firestore.collection(otherName).doc(friend.docId);
@@ -105,8 +102,10 @@ mixin FriendServiceApi on BaseService<FriendCache> {
 
   Future<void> getRemoteFriends() async {
     final currentUser = cache.getCurrentUser();
-    final name = "${Collection.user}/${currentUser.id}/${Collection.friend}";
-    final checkPoint = cache.getPoint(Constants.friendCheckPoint);
+    final name = getFriendCollectionPath(currentUser.id);
+
+    final checkPoint =
+        await cache.getCheckPoint(Constants.friendCheckPoint, currentUser.id);
 
     QueryMap query = firestore.collection(name);
 
