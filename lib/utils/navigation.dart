@@ -129,6 +129,7 @@ extension LoaderExt on BuildContext {
     FutureExceptionCallback<Exception>? onException,
     WidgetBuilder? loaderIndicator,
     bool removeOnceFutureComplete = false,
+    Color barrierColor = Colors.black38,
   }) {
     Loader().loadingIfException<T>(
       this,
@@ -137,6 +138,7 @@ extension LoaderExt on BuildContext {
       loaderIndicator: loaderIndicator,
       onSuccess: onSuccess,
       onException: onException,
+      barrierColor: barrierColor,
     );
   }
 }

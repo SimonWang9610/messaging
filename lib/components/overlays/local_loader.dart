@@ -30,9 +30,14 @@ class Loader extends AnimatedOverlay {
     FutureExceptionCallback<Exception>? onException,
     WidgetBuilder? loaderIndicator,
     bool removeOnceFutureComplete = false,
+    Color barrierColor = Colors.black38,
   }) {
     _ensureLegallyInvokeVoidCallback(() {
-      _insertLoader(context, loaderIndicator ?? _defaultLoaderIndicator);
+      _insertLoader(
+        context,
+        loaderIndicator ?? _defaultLoaderIndicator,
+        barrierColor: barrierColor,
+      );
       _removeIfNoException(
         future: future,
         onSuccess: onSuccess,
@@ -42,11 +47,18 @@ class Loader extends AnimatedOverlay {
     });
   }
 
-  void _insertLoader(BuildContext context, WidgetBuilder? loaderIndicator) {
+  void _insertLoader(
+    BuildContext context,
+    WidgetBuilder? loaderIndicator, {
+    required Color barrierColor,
+  }) {
     assert(!_hasOverlay,
         "should add loader into a queue when there is another loader on the screen");
 
-    _barrier = createBarrier(onDismiss: hideCurrentLoader);
+    _barrier = createBarrier(
+      onDismiss: hideCurrentLoader,
+      barrierColor: barrierColor,
+    );
     _overlay =
         createOverlay(builder: loaderIndicator ?? _defaultLoaderIndicator);
 

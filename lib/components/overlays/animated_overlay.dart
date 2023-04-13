@@ -29,7 +29,7 @@ abstract class AnimatedOverlay implements TickerProvider {
   }) {
     return OverlayEntry(
       builder: (BuildContext context) => ModalBarrier(
-        color: Colors.black38,
+        color: barrierColor,
         dismissible: dismissible,
         onDismiss: onDismiss,
       ),
